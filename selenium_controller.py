@@ -1,0 +1,69 @@
+from selenium import webdriver
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+import os
+import asyncio
+
+class SeleniumController:
+    def __init__(self, nombre_script):
+        if not isinstance(nombre_script, str):
+            raise ValueError("El nombre del script debe ser una cadena")
+        
+        self.nombre_script = nombre_script
+        self.puerto = self.convertir_nombre_a_puerto(nombre_script)
+        self.driver = None
+        self.running = False
+
+    async def iniciar(self):
+
+        try:
+            self.user_data_directory = os.path.join(self.get_executable_dir(), 'DATA', 'SCRIPTS', f'{self.nombre_script}')
+            if not os.path.exists(self.user_data_directory):
+                os.makedirs(self.user_data_directory)
+
+            options = webdriver.ChromeOptions()
+            options.add_argument(f"user-data-dir={self.user_data_directory}")
+            options.add_argument("--disable-extensions")
+            options.add_argument("--disable-background-timer-throttling")
+            options.add_argument("--disable-backgrounding-occluded-windows")
+            options.add_argument("--disable-renderer-backgrounding")
+            options.add_argument("--disable-sync")
+            options.add_argument("--disable-translate")
+            options.add_argument("--disable-features=TranslateUI,BlinkGenPropertyTrees")
+            options.add_argument("--disable-component-extensions-with-background-pages")
+            options.add_argument("--disable-popup-blocking")
+            options.add_argument("--disable-notifications")
+            options.add_experimental_option("excludeSwitches", ["enable-automation"])
+            options.add_experimental_option('useAutomationExtension', False)
+
+            options.add_argument("--lang=ja")
+            options.add_argument(f"--remote-debugging-port={self.puerto}")
+
+            loop = asyncio.get_event_loop()
+            self.driver = await loop.run_in_executor(None, webdriver.Chrome, options)
+            self.driver.get('https://example.com/')
+            self.running = True
+
+            elemento = WebDriverWait(self.driver, 20).until(
+                EC.presence_of_element_located((By.XPATH, '/html/body/div[1]'))
+            )
+            elemento.screenshot(f'DATA/resource/screenshot/{self.nombre_script}screenshot.png')
+
+        except Exception as e:
+            self.running = False
+
+    def get_executable_dir(self):
+        return os.path.dirname(os.path.abspath(__file__))
+    
+    def convertir_nombre_a_puerto(self, nombre):
+        puerto = 9222 + abs(hash(nombre)) % 1000
+        return puerto
+
+    async def is_running(self):
+        return self.running
+
+    async def detener(self):
+        if self.driver:
+            self.driver.quit()
+            self.running = False

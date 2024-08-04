@@ -1,0 +1,6 @@
+/Whatsap_IA_venv
+/DATA
+/.vs
+__pycache__
+#omitir archivos con cierta extension
+*.db
