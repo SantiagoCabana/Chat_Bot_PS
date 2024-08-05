@@ -1,0 +1,26 @@
+<svg viewBox="0 0 500 500" xmlns="http://www.w3.org/2000/svg">
+  <defs></defs>
+  <line stroke-width="2" stroke-miterlimit="10" x1="171.875" y1="46.877" x2="500" y2="46.877" fill="none" style="stroke: rgb(117, 117, 117);"></line>
+  <line stroke-width="2" stroke-miterlimit="10" x1="171.875" y1="125.002" x2="437.5" y2="125.002" fill="none" style="stroke: rgb(117, 117, 117);"></line>
+  <line stroke-width="2" stroke-miterlimit="10" x1="171.875" y1="203.127" x2="500" y2="203.127" fill="none" style="stroke: rgb(117, 117, 117);"></line>
+  <line stroke-width="2" stroke-miterlimit="10" x1="171.875" y1="281.252" x2="453.125" y2="281.252" fill="none" style="stroke: rgb(117, 117, 117);"></line>
+  <g transform="matrix(7.8125, 0, 0, 7.8125, 0.000007, -0.001677)">
+    <g>
+      <polyline stroke-width="2" stroke-miterlimit="10" points="59,48 59,46 57,46 		" fill="none" style="stroke: rgb(117, 117, 117);"></polyline>
+      <line stroke-width="2" stroke-miterlimit="10" stroke-dasharray="4,2" x1="55" y1="46" x2="26" y2="46" fill="none" style="stroke: rgb(117, 117, 117);"></line>
+      <polyline stroke-width="2" stroke-miterlimit="10" points="25,46 23,46 23,48 		" fill="none" style="stroke: rgb(117, 117, 117);"></polyline>
+      <line stroke-width="2" stroke-miterlimit="10" stroke-dasharray="3,2" x1="23" y1="50" x2="23" y2="53" fill="none" style="stroke: rgb(117, 117, 117);"></line>
+      <polyline stroke-width="2" stroke-miterlimit="10" points="23,54 23,56 25,56 		" fill="none" style="stroke: rgb(117, 117, 117);"></polyline>
+      <line stroke-width="2" stroke-miterlimit="10" stroke-dasharray="4,2" x1="27" y1="56" x2="56" y2="56" fill="none" style="stroke: rgb(117, 117, 117);"></line>
+      <polyline stroke-width="2" stroke-miterlimit="10" points="57,56 59,56 59,54 		" fill="none" style="stroke: rgb(117, 117, 117);"></polyline>
+      <line stroke-width="2" stroke-miterlimit="10" stroke-dasharray="3,2" x1="59" y1="53" x2="59" y2="49" fill="none" style="stroke: rgb(117, 117, 117);"></line>
+    </g>
+  </g>
+  <g transform="matrix(7.8125, 0, 0, 7.8125, 0.000007, -0.001677)">
+    <polyline stroke-width="2" stroke-linejoin="bevel" stroke-miterlimit="10" points="10,58 17,51 
+		10,44 	" fill="none" style="stroke: rgb(117, 117, 117);"></polyline>
+    <g>
+      <line stroke-width="2" stroke-miterlimit="10" x1="17" y1="51" x2="0" y2="51" fill="none" style="stroke: rgb(117, 117, 117);"></line>
+    </g>
+  </g>
+</svg>

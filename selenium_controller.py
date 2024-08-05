@@ -10,10 +10,12 @@ class SeleniumController:
         if not isinstance(nombre_script, str):
             raise ValueError("El nombre del script debe ser una cadena")
         
+        self.ruta_screenshot = 'DATA/resource/screenshot/'
         self.nombre_script = nombre_script
         self.puerto = self.convertir_nombre_a_puerto(nombre_script)
         self.driver = None
         self.running = False
+        self.crear_directorio(self.ruta_screenshot)
 
     async def iniciar(self):
 
@@ -48,7 +50,7 @@ class SeleniumController:
             elemento = WebDriverWait(self.driver, 20).until(
                 EC.presence_of_element_located((By.XPATH, '/html/body/div[1]'))
             )
-            elemento.screenshot(f'DATA/resource/screenshot/{self.nombre_script}screenshot.png')
+            elemento.screenshot(f'{self.ruta_screenshot}{self.nombre_script}screenshot.png')
 
         except Exception as e:
             self.running = False
@@ -59,6 +61,10 @@ class SeleniumController:
     def convertir_nombre_a_puerto(self, nombre):
         puerto = 9222 + abs(hash(nombre)) % 1000
         return puerto
+    
+    def crear_directorio(self, ruta):
+        if not os.path.exists(ruta):
+            os.makedirs(ruta)
 
     async def is_running(self):
         return self.running
