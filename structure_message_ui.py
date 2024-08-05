@@ -1,6 +1,6 @@
 #structure_message_ui.py
 import os
-from PyQt5.QtWidgets import QMessageBox, QScrollArea, QPushButton, QVBoxLayout, QHBoxLayout, QGraphicsView, QGraphicsScene, QGraphicsItem
+from PyQt5.QtWidgets import QLabel,QMessageBox, QScrollArea, QPushButton, QVBoxLayout, QHBoxLayout, QGraphicsView, QGraphicsScene, QGraphicsItem
 from PyQt5.QtCore import Qt, QPointF, QRectF,QLineF
 from PyQt5.QtGui import QPainter, QPen, QPainterPath, QBrush, QColor, QWheelEvent
 import random
@@ -100,10 +100,10 @@ class ZoomableGraphicsView(QGraphicsView):
         self.centerOn(0, 0)
 
 def container_estructure(MainUI):
-    main_layout = QVBoxLayout()
+    layoud_structure = QVBoxLayout()
 
     button_layout = QHBoxLayout()
-    main_layout.addLayout(button_layout)
+    layoud_structure.addLayout(button_layout)
 
     add_button = QPushButton("Agregar Widget")
     add_button.clicked.connect(lambda: MainUI.add_widget(MainUI))
@@ -129,13 +129,23 @@ def container_estructure(MainUI):
     MainUI.scene.setSceneRect(0, 0, 2000, 2000)
     MainUI.view = ZoomableGraphicsView(MainUI.scene)
     MainUI.view.setSceneRect(0, 0, 2000, 2000)
-    main_layout.addWidget(MainUI.view)
-    central_widget = QScrollArea() 
+    layoud_structure.addWidget(MainUI.view)
+
+    main_layout = QHBoxLayout()
+    main_layout.addLayout(layoud_structure)
+
+    relation_list_area = QVBoxLayout()
+    relation_list_area.addWidget(QLabel("Lista de Relaciones"))
+    #scroll area vertical de 1 sola columna
+    relation_list_area.addWidget(QScrollArea())
+    main_layout.addLayout(relation_list_area)
+
+    #agregarle borde al widguet principal
+    central_widget = QScrollArea()
     central_widget.setLayout(main_layout)
 
     MainUI.cargar_flujo(MainUI)
-
-
+    
     return central_widget
 
 # función para cargar los flujo
