@@ -2,8 +2,7 @@ from selenium import webdriver
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
-import os
-import asyncio
+import os, socket, asyncio
 
 class SeleniumController:
     def __init__(self, nombre_script):
@@ -18,7 +17,6 @@ class SeleniumController:
         self.crear_directorio(self.ruta_screenshot)
 
     async def iniciar(self):
-
         try:
             self.user_data_directory = os.path.join(self.get_executable_dir(), 'DATA', 'SCRIPTS', f'{self.nombre_script}')
             if not os.path.exists(self.user_data_directory):
@@ -39,35 +37,39 @@ class SeleniumController:
             options.add_experimental_option("excludeSwitches", ["enable-automation"])
             options.add_experimental_option('useAutomationExtension', False)
 
-            options.add_argument("--lang=ja")
+            options.add_argument("--lang=es")
             options.add_argument(f"--remote-debugging-port={self.puerto}")
 
             loop = asyncio.get_event_loop()
             self.driver = await loop.run_in_executor(None, webdriver.Chrome, options)
-            self.driver.get('https://example.com/')
+            await self.driver.get('https://www.youtube.com/')
             self.running = True
 
-            elemento = WebDriverWait(self.driver, 20).until(
+            elemento = await WebDriverWait(self.driver, 20).until(
                 EC.presence_of_element_located((By.XPATH, '/html/body/div[1]'))
             )
             elemento.screenshot(f'{self.ruta_screenshot}{self.nombre_script}screenshot.png')
 
         except Exception as e:
             self.running = False
+            print(f"Error: {e}")
 
     def get_executable_dir(self):
         return os.path.dirname(os.path.abspath(__file__))
     
+    def puerto_disponible(self, puerto):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            return s.connect_ex(('localhost', puerto)) != 0
+    
     def convertir_nombre_a_puerto(self, nombre):
         puerto = 9222 + abs(hash(nombre)) % 1000
+        while not self.puerto_disponible(puerto):
+            puerto += 1
         return puerto
     
     def crear_directorio(self, ruta):
         if not os.path.exists(ruta):
             os.makedirs(ruta)
-
-    async def is_running(self):
-        return self.running
 
     async def detener(self):
         if self.driver:

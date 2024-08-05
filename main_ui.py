@@ -2,7 +2,7 @@ import sys,asyncio,random
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (QSizePolicy,QApplication, QMainWindow, QPushButton, QScrollArea, 
                             QVBoxLayout, QHBoxLayout, QWidget, QGridLayout, QStackedWidget,
-                            QMessageBox)
+                            QMessageBox, QFrame, QLabel)
 
 # Importar de otros archivos
 from selenium_controller import SeleniumController
@@ -46,6 +46,7 @@ class MainWindow(QMainWindow):
         self.generate_unique_color = generate_unique_color
         self.create_connection_path = create_connection_path
 
+        self.cantidad = 0
         self.cube_script = cube_script
         self.cargar_flujo = cargar_flujo
         self.undo_changes = undo_changes
@@ -128,17 +129,17 @@ class MainWindow(QMainWindow):
 
         layout.addWidget(self.Running)
         layout.addWidget(self.campo)
-        widget = QWidget()
+        widget = QFrame()
         widget.setLayout(layout)
         return widget
 
     def create_script_manager_area(self):
-        widget = gestionVentana(self)
-        return widget
+        scrollArea = gestionVentana(self)
+        return scrollArea
 
     def create_structure_message_area(self):
-        widget = container_estructure(self)
-        return widget
+        scrollArea = container_estructure(self)
+        return scrollArea
 
     #funcion para ocultar las areas de los botones
     def ocultar_areas(self):
@@ -167,8 +168,20 @@ class MainWindow(QMainWindow):
             col = i % 3
             self.grid_layout.addWidget(widget, row, col)
 
+    def consultar_cantidad_scripts(self):
+        scripts = consultar_scripts()
+        self.cantidad = len(scripts)
+        #limpiar la cantidad en el layout
+        for i in reversed(range(self.cantidad_layout.count())):
+            widget = self.cantidad_layout.itemAt(i).widget()
+            if widget:
+                widget.deleteLater()
+        #colocar la cantidad en el layout
+        self.cantidad_layout.addWidget(QLabel(f"Scripts: {self.cantidad}"))
+
     def cargar_scripts(self):
         scripts = consultar_scripts()
+        self.consultar_cantidad_scripts()
     
         for script in scripts:
             id_script = script['id']
@@ -194,6 +207,7 @@ class MainWindow(QMainWindow):
                 return
             id = ''.join(random.choices('abcdefghijklmnopqrstuvwxyz0123456789', k=10))
             insertar_script(id, nombre_script)
+            self.consultar_cantidad_scripts()
             self.agregar_contenedor_script(id, nombre_script)
             self.nombre_input.clear()
             # Añade el script a la interfaz el cual va a mostrar el nombre del script al scrollArea
@@ -219,6 +233,8 @@ class MainWindow(QMainWindow):
                 self.grid_layout.removeWidget(widget)
                 widget.deleteLater()
                 break
+        #reordenar los scripts
+        self.reordenar_scripts()
         
         # Actualiza la lista script_widgets
         self.script_widgets = [widget for widget in self.script_widgets if not (hasattr(widget, 'id_script') and widget.id_script == id)]
@@ -233,7 +249,7 @@ class MainWindow(QMainWindow):
             del self.selenium_controllers[script_name]
         
         print(f'Script eliminado: {id}')
-        
+        self.consultar_cantidad_scripts()
         # Reordenar los scripts en la sección de inicio
         self.reordenar_scripts()
 

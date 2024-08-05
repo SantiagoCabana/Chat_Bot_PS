@@ -1,7 +1,7 @@
 #structure_message_ui.py
 import os
-from PyQt5.QtWidgets import QMessageBox, QWidget, QPushButton, QVBoxLayout, QHBoxLayout, QGraphicsView, QGraphicsScene, QGraphicsItem
-from PyQt5.QtCore import Qt, QPointF, QRectF
+from PyQt5.QtWidgets import QMessageBox, QScrollArea, QPushButton, QVBoxLayout, QHBoxLayout, QGraphicsView, QGraphicsScene, QGraphicsItem
+from PyQt5.QtCore import Qt, QPointF, QRectF,QLineF
 from PyQt5.QtGui import QPainter, QPen, QPainterPath, QBrush, QColor, QWheelEvent
 import random
 import xml.etree.ElementTree as ET
@@ -33,6 +33,15 @@ class MovableWidget(QGraphicsItem):
             new_pos = value
             new_pos.setX(min(rect.right() - self.boundingRect().width(), max(new_pos.x(), rect.left())))
             new_pos.setY(min(rect.bottom() - self.boundingRect().height(), max(new_pos.y(), rect.top())))
+
+            # Verificar colisiones con otros widgets
+            for item in self.scene().items():
+                if item is not self and isinstance(item, MovableWidget):  # Solo verificar colisiones con otros widgets
+                    # Crear un rectángulo de colisión en la nueva posición
+                    new_rect = self.boundingRect().translated(new_pos)
+                    if new_rect.intersects(item.boundingRect().translated(item.pos())):
+                        return self.pos()  # Si hay colisión, no mover el widget
+
             if self.scene():
                 self.MainUI.update_connections(self.MainUI)  # Pasar MainUI como argumento
             return new_pos
@@ -48,13 +57,43 @@ class ZoomableGraphicsView(QGraphicsView):
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         self.setDragMode(QGraphicsView.ScrollHandDrag)
         self.setAlignment(Qt.AlignTop | Qt.AlignLeft)
+        #llamada a la funcion para crear un fondo cuadriculado
+        self.setBackgroundBrush(QBrush(Qt.white))
 
+
+    #funcion para crear un fondo cuadriculado fondo oscuro y encima lineas claras y cuadros semi grandes para mejor visualizacion, griss claro y lineas semi oscuras las lineas no se deben de crusar uno encima de otro pero deben de mantener su patron cuadrado
+    def drawBackground(self, painter, rect):
+        super().drawBackground(painter, rect)
+        # Aumentar el tamaño de la cuadrícula
+        grid_size = 100
+        # Establecer el color de fondo a un gris más claro
+        painter.fillRect(rect, QColor(200, 200, 200))
+        left = int(rect.left()) - (int(rect.left()) % grid_size)
+        top = int(rect.top()) - (int(rect.top()) % grid_size)
+        lines = []
+        for x in range(left, int(rect.right()), grid_size):
+            lines.append(QLineF(x, rect.top(), x, rect.bottom()))
+        for y in range(top, int(rect.bottom()), grid_size):
+            lines.append(QLineF(rect.left(), y, rect.right(), y))
+        # Establecer el color de las líneas de la cuadrícula a un gris más oscuro
+        painter.setPen(QPen(QColor(150, 150, 150), 1))
+        painter.drawLines(lines)
+
+    #agregar limites para el zoom y deszoom
     def wheelEvent(self, event: QWheelEvent):
         zoom_factor = 1.5
-        if event.angleDelta().y() > 0:
-            self.scale(zoom_factor, zoom_factor)
-        else:
-            self.scale(1 / zoom_factor, 1 / zoom_factor)
+        max_zoom = 1.0  # Límite máximo de zoom
+        min_zoom = 0.15  # Límite mínimo de zoom
+    
+        current_transform = self.transform()
+        current_scale = current_transform.m11()  # Obtener el factor de escala actual
+    
+        if event.angleDelta().y() > 0:  # Zoom in
+            if current_scale * zoom_factor <= max_zoom:
+                self.scale(zoom_factor, zoom_factor)
+        else:  # Zoom out
+            if current_scale / zoom_factor >= min_zoom:
+                self.scale(1 / zoom_factor, 1 / zoom_factor)
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -91,10 +130,11 @@ def container_estructure(MainUI):
     MainUI.view = ZoomableGraphicsView(MainUI.scene)
     MainUI.view.setSceneRect(0, 0, 2000, 2000)
     main_layout.addWidget(MainUI.view)
-    central_widget = QWidget()
+    central_widget = QScrollArea() 
     central_widget.setLayout(main_layout)
 
     MainUI.cargar_flujo(MainUI)
+
 
     return central_widget
 
@@ -235,15 +275,13 @@ def reiniciar_todo(MainUI):
     MainUI.widgets.clear()
     MainUI.next_widget_id = 1
     MainUI.update_connections(MainUI)
-    #eliminar el archivo xml
+    
+    # Eliminar el archivo XML
     if os.path.exists('DATA/resource/xml/flujo.xml'):
         os.remove('DATA/resource/xml/flujo.xml')
-        #añade el primer widget
-        MainUI.add_widget(MainUI, can_delete=False, color='black')
-    else:
-        messagebox = QMessageBox()
-        messagebox.setIcon(QMessageBox.Information)
-        messagebox.setText("No realizo ningun cambio")
+    
+    # Añadir el primer widget
+    MainUI.add_widget(MainUI, can_delete=False, color='black')
 
 def update_connections(MainUI):
     for connection in MainUI.connections:

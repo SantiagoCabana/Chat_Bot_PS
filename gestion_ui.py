@@ -1,16 +1,20 @@
 #gestion_ui.py
-from PyQt5.QtWidgets import QScrollArea, QPushButton, QLineEdit, QHBoxLayout, QVBoxLayout, QWidget, QSpacerItem, QSizePolicy
+from PyQt5.QtWidgets import (QScrollArea, QPushButton, QLineEdit, QHBoxLayout, QVBoxLayout, 
+                             QWidget, QSpacerItem, QSizePolicy,QLabel)
 
 
 def gestionVentana(MainUI):
     MainUI.gest_layoud = QVBoxLayout()
     MainUI.nombre_input = QLineEdit(MainUI)
     MainUI.nombre_input.setPlaceholderText('Nombre del Script')
+    MainUI.cantidad = QWidget()
+    MainUI.cantidad_layout = QHBoxLayout(MainUI.cantidad)
     MainUI.crear_boton = QPushButton('Crear Script', MainUI)
     MainUI.crear_boton.clicked.connect(MainUI.crear_script_cube)
     MainUI.inputS = QHBoxLayout()
     MainUI.inputS.addWidget(MainUI.nombre_input)
     MainUI.inputS.addStretch()
+    MainUI.inputS.addWidget(MainUI.cantidad)
     MainUI.inputS.addWidget(MainUI.crear_boton)
     MainUI.gest_layoud.addLayout(MainUI.inputS)
 
@@ -30,7 +34,7 @@ def gestionVentana(MainUI):
     MainUI.gest_layoud.addWidget(MainUI.scroll_area)
 
     #retorna el widget q tendra todos los elementos
-    widget = QWidget()
+    widget = QScrollArea()
     widget.setLayout(MainUI.gest_layoud)
     return widget
 
