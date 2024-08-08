@@ -11,6 +11,7 @@ def gestionVentana(MainUI):
     MainUI.cantidad_layout = QHBoxLayout(MainUI.cantidad)
     MainUI.crear_boton = QPushButton('Crear Script', MainUI)
     MainUI.crear_boton.clicked.connect(MainUI.crear_script_cube)
+    # 
     MainUI.inputS = QHBoxLayout()
     MainUI.inputS.addWidget(MainUI.nombre_input)
     MainUI.inputS.addStretch()

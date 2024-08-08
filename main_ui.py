@@ -156,7 +156,7 @@ class MainWindow(QMainWindow):
     def show_script_manager_area(self):
         self.ocultar_areas()
         self.script_manager_area.show()
-    
+
     #funcion para mostrar el area de estructura de mensajes
     def show_structure_message_area(self):
         self.ocultar_areas()
@@ -182,7 +182,7 @@ class MainWindow(QMainWindow):
     def cargar_scripts(self):
         scripts = consultar_scripts()
         self.consultar_cantidad_scripts()
-    
+
         for script in scripts:
             id_script = script['id']
             nombre_script = script['nombre']
