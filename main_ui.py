@@ -1,26 +1,71 @@
+#main_ui.py
 import sys,asyncio,random
 from PyQt5.QtCore import Qt
 from PyQt5.QtWidgets import (QSizePolicy,QApplication, QMainWindow, QPushButton, QScrollArea, 
                             QVBoxLayout, QHBoxLayout, QWidget, QGridLayout, QStackedWidget,
                             QMessageBox, QFrame, QLabel)
 
+from PyQt5.QtSvg import QSvgRenderer
+from PyQt5.QtGui import QIcon
+from PyQt5.QtGui import QPixmap, QPainter
+
+import os
+from google_auth_oauthlib.flow import InstalledAppFlow
+
 # Importar de otros archivos
 from selenium_controller import SeleniumController
+from historial_chat import historial_chat_area
+
 
 from gestion_ui import gestionVentana, cube_script
 #esto retorna lista de nombre e id de los scripts de la base de datos
 from sql.database import consultar_scripts, Detener_script_bd, Iniciar_script_bd
-from container_script import container_script
+from container_script import create_script_container
 from sql.database import insertar_script, eliminar_script, buscar_script
 
-from structure_message_ui import (container_estructure, add_widget, delete_last_widget, cargar_flujo,
-                                update_connections, generate_unique_color, create_connection_path,
-                                undo_changes)
+from structure_message_ui import container_estructure
 
-from asyncio_runner import AsyncioRunner
+
+class IconButton(QPushButton):
+    def __init__(self, text, svg_path, parent=None):
+        super().__init__(parent)
+        
+        # Crear un widget contenedor para la imagen y el texto
+        container = QWidget(self)
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)  # Eliminar márgenes alrededor del contenedor
+        layout.setSpacing(0)  # Eliminar espacio entre imagen y texto
+        
+        # Cargar la imagen SVG
+        svg_renderer = QSvgRenderer(svg_path)
+        pixmap = QPixmap(50, 50)  # Ajusta el tamaño según sea necesario
+        pixmap.fill(Qt.transparent)
+        painter = QPainter(pixmap)
+        svg_renderer.render(painter)
+        painter.end()
+
+        # Crear un QLabel para la imagen
+        image_label = QLabel(self)
+        image_label.setPixmap(pixmap)
+        image_label.setAlignment(Qt.AlignCenter)  # Alinear la imagen al centro
+        layout.addWidget(image_label, alignment=Qt.AlignCenter)
+
+        # Crear un QLabel para el texto
+        text_label = QLabel(text, self)
+        text_label.setAlignment(Qt.AlignCenter)  # Alinear el texto al centro
+        layout.addWidget(text_label, alignment=Qt.AlignCenter)
+        
+        # Configurar el contenedor
+        container.setLayout(layout)
+        
+        # Configurar el botón
+        self.setFixedWidth(120)  # Ajusta el ancho fijo según sea necesario
+        self.setLayout(QVBoxLayout())
+        self.layout().addWidget(container)
+        self.layout().setContentsMargins(0, 0, 0, 0)  # Eliminar márgenes alrededor del botón
 
 class MainWindow(QMainWindow):
-    def __init__(self, asyncio_runner):
+    def __init__(self):
         super().__init__()
 
         self.setWindowTitle("Control de Selenium")
@@ -28,7 +73,6 @@ class MainWindow(QMainWindow):
         self.setMinimumWidth(1100)
 
         self.respuestas_window = None
-        self.asyncio_runner = asyncio_runner
         self.selenium_controller = None
         self.gestion_ventana = None
         self.selenium_controllers = {}
@@ -40,69 +84,94 @@ class MainWindow(QMainWindow):
         self.widgets = []
         self.connections = []
         self.next_widget_id = 1
-        self.add_widget = add_widget
-        self.delete_last_widget = delete_last_widget
-        self.update_connections = update_connections
-        self.generate_unique_color = generate_unique_color
-        self.create_connection_path = create_connection_path
 
         self.cantidad = 0
         self.cube_script = cube_script
-        self.cargar_flujo = cargar_flujo
-        self.undo_changes = undo_changes
+        self.structure_ui = container_estructure(self)
+        self.historial_chat_area = historial_chat_area()
 
         self.initUI()
+        self.crear_token_api_contacts()
 
     def initUI(self):
-        ancho_fijo = 120
-
-        self.home = QPushButton("Inicio", self)
-        self.home.setFixedWidth(ancho_fijo)
+        anchofijo = 120
+        altura = 80
+        # Crear botones personalizados con imagen y texto
+        self.home = IconButton("Inicio", "resource/svg/home.svg", self)
+        #tamaño de los botones
+        self.home.setFixedWidth(anchofijo)
+        self.home.setFixedHeight(altura)
         self.home.clicked.connect(self.show_home_area)
 
-        self.Gestionar = QPushButton("Gestionar Script", self)
-        self.Gestionar.setFixedWidth(ancho_fijo)
+        self.Gestionar = IconButton("Gestionar Script", "resource/svg/blocks.svg", self)
+        self.Gestionar.setFixedWidth(anchofijo)
+        self.Gestionar.setFixedHeight(altura)
         self.Gestionar.clicked.connect(self.show_script_manager_area)
 
-        self.btn_estructure = QPushButton('Estructurar Mensajes', self)
-        self.btn_estructure.setFixedWidth(ancho_fijo)
+        self.btn_estructure = IconButton('Estructurar Mensajes', "resource/svg/flujo.svg", self)
+        self.btn_estructure.setFixedWidth(anchofijo)
+        self.btn_estructure.setFixedHeight(altura)
         self.btn_estructure.clicked.connect(self.show_structure_message_area)
+
+        self.btn_hisstorial_chat = IconButton('Historial Chat', "resource/svg/historial_chat.svg", self)
+        self.btn_hisstorial_chat.setFixedWidth(anchofijo)
+        self.btn_hisstorial_chat.setFixedHeight(altura)
+        self.btn_hisstorial_chat.clicked.connect(self.show_historial_chat_area)
 
         self.boton4 = QPushButton("⚙️", self)
         self.boton4.setFixedWidth(50)
 
+        # Configurar el layout
         self.layout = QHBoxLayout()
         button_top = QVBoxLayout()
         button_layout = QVBoxLayout()
 
+        # Agregar botones al layout
+        button_layout.addWidget(self.home)
+        button_layout.addWidget(self.Gestionar)
+        button_layout.addWidget(self.btn_estructure)
+        button_layout.addWidget(self.btn_hisstorial_chat)
+        button_layout.addWidget(self.boton4)
+
+        self.layout.addLayout(button_layout)
+        central_widget = QWidget()
+        central_widget.setLayout(self.layout)
+        self.setCentralWidget(central_widget)
+
         button_top.addWidget(self.home)
         button_top.addWidget(self.Gestionar)
         button_top.addWidget(self.btn_estructure)
+        button_top.addWidget(self.btn_hisstorial_chat)
 
         button_layout.addLayout(button_top)
         button_layout.addStretch()
         button_layout.addWidget(self.boton4)
 
-        self.stacked_widget = QStackedWidget()
+        # Crear el layout principal
+        self.main_layout = QVBoxLayout(self)
 
         # Crear las áreas sin direccion
         self.home_area = self.create_home_area()
         self.script_manager_area = self.create_script_manager_area()
         self.structure_message_area = self.create_structure_message_area()
+        self.historial_chat_area = self.create_historial_chat_area()
 
-        # Añadir las áreas al QStackedWidget
-        self.stacked_widget.addWidget(self.home_area)
-        self.stacked_widget.addWidget(self.script_manager_area)
-        self.stacked_widget.addWidget(self.structure_message_area)
+        # Añadir las áreas al layout principal
+        self.main_layout.addWidget(self.home_area)
+        self.main_layout.addWidget(self.script_manager_area)
+        self.main_layout.addWidget(self.structure_message_area)
+        self.main_layout.addWidget(self.historial_chat_area)
+
 
         self.layout.addLayout(button_layout)
-        self.layout.addWidget(self.stacked_widget)
+        self.layout.addLayout(self.main_layout)
 
         central_widget = QWidget()
         central_widget.setLayout(self.layout)
         self.setCentralWidget(central_widget)
 
         self.cargar_scripts()
+        self.show_home_area()
 
     def create_home_area(self):
         layout = QVBoxLayout()
@@ -138,14 +207,17 @@ class MainWindow(QMainWindow):
         return scrollArea
 
     def create_structure_message_area(self):
-        scrollArea = container_estructure(self)
-        return scrollArea
+        return self.structure_ui
+    
+    def create_historial_chat_area(self):
+        return self.historial_chat_area
 
     #funcion para ocultar las areas de los botones
     def ocultar_areas(self):
         self.home_area.hide()
         self.script_manager_area.hide()
         self.structure_message_area.hide()
+        self.historial_chat_area.hide()
 
     #funcion para mostrar el area de inicio
     def show_home_area(self):
@@ -161,6 +233,10 @@ class MainWindow(QMainWindow):
     def show_structure_message_area(self):
         self.ocultar_areas()
         self.structure_message_area.show()
+
+    def show_historial_chat_area(self):
+        self.ocultar_areas()
+        self.historial_chat_area.show()
 
     def reordenar_scripts(self):
         for i, widget in enumerate(self.script_widgets):
@@ -190,7 +266,7 @@ class MainWindow(QMainWindow):
             self.scroll_layout.insertWidget(0, self.cube_script(self,id_script, nombre_script))
 
     def agregar_contenedor_script(self, id_script, nombre_script):
-        contenedor_new = container_script(self, id_script, nombre_script)
+        contenedor_new = create_script_container(id_script, nombre_script)
         contenedor_new.id_script = id_script  # Añade esta línea
         self.script_widgets.append(contenedor_new)
         self.reordenar_scripts()
@@ -253,6 +329,37 @@ class MainWindow(QMainWindow):
         # Reordenar los scripts en la sección de inicio
         self.reordenar_scripts()
 
+    def crear_token_api_contacts(self):
+        # Ruta al archivo de credenciales
+        creds_file = 'Z_interface/credentials/credencial_api_contacts.json'
+        contact_token = 'DATA/tokens/contacts_token.json'
+
+        #verificar si el token ya existe
+        if os.path.exists(contact_token):
+            print(f"Token encontrado en {contact_token}")
+            return
+
+        # Ruta donde se guardará el token
+        token_path = os.path.join(contact_token)
+        
+        # Asegúrate de que el directorio existe
+        os.makedirs(os.path.dirname(token_path), exist_ok=True)
+        
+        # Configura el flujo de OAuth 2.0
+        flow = InstalledAppFlow.from_client_secrets_file(
+            creds_file,
+            scopes=['https://www.googleapis.com/auth/contacts']
+        )
+        
+        # Ejecuta el flujo de autorización
+        creds = flow.run_local_server(port=0)
+        
+        # Guarda las credenciales para la próxima ejecución
+        with open(token_path, 'w') as token:
+            token.write(creds.to_json())
+        
+        print(f"Token guardado exitosamente en {token_path}")
+
     async def alternar_estado_todos(self):
         if self.Running.text() == "Iniciar Todo":
             self.Running.setEnabled(False)
@@ -306,13 +413,10 @@ class MainWindow(QMainWindow):
                 boton.setText("Iniciar")
                 boton.setChecked(False)
 
+    #seccion de el navegador donde se mostrara lo q hace el script selenium pero dentro de la interfaz 
+
 if __name__ == '__main__':
     app = QApplication(sys.argv)
-    asyncio_runner = AsyncioRunner()
-    asyncio_runner.start()
-
-    main_ui = MainWindow(asyncio_runner)
-    main_ui.show()
-
+    window = MainWindow()
+    window.show()
     sys.exit(app.exec_())
-    asyncio_runner.stop()

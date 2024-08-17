@@ -1,4 +1,4 @@
-
+#f_structure.py
 from PyQt5.QtWidgets import QMessageBox
 import xml.etree.ElementTree as ET
 from PyQt5.QtGui import QColor
@@ -7,9 +7,9 @@ from PyQt5.QtGui import QColor
 def color_to_hex(color):
     return color.name()
 
-def guardar_pos_flujo(file_path, widgets,confiramcion=True):
-    if confiramcion:
-        #alerta para confirmar guadado
+def guardar_pos_flujo(file_path, widgets, confirmacion=True):
+    if confirmacion:
+        # alerta para confirmar guardado
         msg = QMessageBox()
         msg.setWindowTitle("Guardar")
         msg.setText("¿Estás seguro de guardar los cambios?")
@@ -20,10 +20,13 @@ def guardar_pos_flujo(file_path, widgets,confiramcion=True):
         if respuesta == QMessageBox.No:
             return
     try:
-        root = ET.Element('flujo')
+        # Crear la sección de posiciones
+        root_flujo = ET.Element('posiciones')
         for widget in widgets:
+            if not hasattr(widget, 'widget_id'):
+                raise AttributeError(f"El widget no tiene el atributo 'widget_id': {widget}")
             color_hex = color_to_hex(widget.color)
-            widget_element = ET.SubElement(root, 'widget', 
+            widget_element = ET.SubElement(root_flujo, 'widget', 
                 id=str(widget.widget_id), 
                 x=str(widget.pos().x()), 
                 y=str(widget.pos().y()), 
@@ -34,9 +37,25 @@ def guardar_pos_flujo(file_path, widgets,confiramcion=True):
                     id=opcion[0], 
                     x=str(opcion[1].x()), 
                     y=str(opcion[1].y()))
+        
+        # Crear la sección de conexiones
+        root_conexiones = ET.Element('conexiones')
+        for widget in widgets:
+            if not hasattr(widget, 'widget_id'):
+                raise AttributeError(f"El widget no tiene el atributo 'widget_id': {widget}")
+            widget_element = ET.SubElement(root_conexiones, 'widget', id=str(widget.widget_id))
+            for conexion in widget.connections:
+                conexion_element = ET.SubElement(widget_element, 'conexion', id=str(conexion))
+        
+        # Crear el árbol XML principal y añadir ambas secciones
+        root = ET.Element('flujo')
+        root.append(root_flujo)
+        root.append(root_conexiones)
+        
+        # Guardar el árbol XML en el archivo especificado
         tree = ET.ElementTree(root)
         tree.write(file_path)
-        print(f"Posiciones de flujo guardadas: {file_path}")
+
     except Exception as e:
         print(f"Error al guardar las posiciones de flujo: {e}")
 
@@ -45,7 +64,9 @@ def cargar_pos_flujo(file_path):
         tree = ET.parse(file_path)
         root = tree.getroot()
         widgets = []
-        for widget in root.findall('widget'):
+
+        # Cargar posiciones de los widgets
+        for widget in root.find('posiciones').findall('widget'):
             try:
                 widget_id = int(widget.get('id'))
             except:
@@ -53,7 +74,7 @@ def cargar_pos_flujo(file_path):
             x = float(widget.get('x'))
             y = float(widget.get('y'))
             color = widget.get('color')
-            can_delete = widget.get('can_delete', 'true').lower() == 'true'  # Añadimos can_delete
+            can_delete = widget.get('can_delete', 'true').lower() == 'true'
             opciones = [(opcion.get('id'), (float(opcion.get('x')), float(opcion.get('y')))) 
                         for opcion in widget.findall('opcion')]
             widgets.append({
@@ -61,13 +82,26 @@ def cargar_pos_flujo(file_path):
                 'x': x, 
                 'y': y, 
                 'color': color, 
-                'can_delete': can_delete,  # Incluimos can_delete en el diccionario
-                'opciones': opciones
+                'can_delete': can_delete, 
+                'opciones': opciones,
+                'connections': []  # Inicializar conexiones vacías
             })
-        print(f"Posiciones de flujo cargadas: {[w['id'] for w in widgets]}")
+
+        # Crear un diccionario para mapear los IDs de los widgets
+        widget_map = {widget['id']: widget for widget in widgets}
+
+        # Cargar conexiones de los widgets
+        for widget in root.find('conexiones').findall('widget'):
+            widget_id = int(widget.get('id')) if widget.get('id') != 'None' else None
+            if widget_id in widget_map:
+                for conexion in widget.findall('conexion'):
+                    conexion_id = int(conexion.get('id')) if conexion.get('id') != 'None' else None
+                    widget_map[widget_id]['connections'].append(conexion_id)
+
+        print(f"Posiciones y conexiones de flujo cargadas: {[w['id'] for w in widgets]}")
         return widgets
     except Exception as e:
-        print(f"Error al cargar las posiciones de flujo: {e}")
+        print(f"Error al cargar las posiciones y conexiones de flujo: {e}")
         return []
 
 #guardar los datos de los widgets en un archivo XML

@@ -1,58 +1,94 @@
-from PyQt5.QtWidgets import QWidget, QPushButton, QVBoxLayout, QLabel, QHBoxLayout, QTextEdit
+from PyQt5.QtWidgets import QWidget, QPushButton, QVBoxLayout, QLabel, QHBoxLayout, QTextEdit, QGroupBox, QScrollArea, QApplication, QGridLayout, QSizePolicy, QFrame
+from PyQt5.QtCore import Qt
 
-# Función para la estructura de cada contenedor de script
-def container_script(mainUI, id_script, nombre_script):
+class ScriptContainer(QWidget):
+    def __init__(self, id_script, nombre_script):
+        super().__init__()
 
-    # Crear el widget contenedor
-    container = QWidget()
-    
-    # Crear el layout principal
-    layout = QVBoxLayout()
-    button_layout = QHBoxLayout()
+        self.id_script = id_script
+        self.nombre_script = nombre_script
+        self.ventana_script = None  # Inicializar la ventana del script como None
 
-    # Crear el botón que cambia de estado
-    boton_estado = QPushButton("Iniciar")
-    boton_estado.setCheckable(True)
-    boton_estado.clicked.connect(lambda: estado_button(mainUI, id_script))
+        # Crear un QGroupBox con un título opcional
+        self.group_box = QGroupBox(self.nombre_script)
 
-    boton_configuracion = QPushButton("⚙️")
-    boton_configuracion.setFixedWidth(50)
+        # Layout principal
+        self.main_layout = QVBoxLayout(self.group_box)
+        self.button_layout = QHBoxLayout()
 
-    button_layout.addWidget(boton_estado)
-    button_layout.addWidget(boton_configuracion)
+        # Botón de estado
+        self.boton_estado = QPushButton("Iniciar")
+        self.boton_estado.setCheckable(True)
+        self.boton_estado.clicked.connect(self.toggle_estado)
 
-    # Crear un campo adicional (QTextEdit) para mostrar el log
-    campo_adicional = QTextEdit()
-    campo_adicional.setPlaceholderText("Campo adicional")
-    campo_adicional.setReadOnly(True)  # Hacer que el campo sea de solo lectura
+        # Botón de configuración
+        self.boton_configuracion = QPushButton("⚙️")
+        self.boton_configuracion.setFixedWidth(50)
 
-    # Añadir widgets al layout
-    layout.addWidget(QLabel(f"Script: {nombre_script}"))
-    layout.addLayout(button_layout)
-    layout.addWidget(campo_adicional)
-    layout.addStretch()
+        # Botón para ver la pantalla del script
+        self.boton_pantalla = QPushButton("📺")
+        self.boton_pantalla.setFixedWidth(50)
+        self.boton_pantalla.clicked.connect(self.mostrar_ventana_script)
 
-    # Establecer el layout en el contenedor
-    container.setLayout(layout)
+        self.button_layout.addWidget(self.boton_estado)
+        self.button_layout.addWidget(self.boton_pantalla)
+        self.button_layout.addWidget(self.boton_configuracion)
 
-    # Añadirle un tamaño mínimo
-    container.setMinimumHeight(100)
-    container.setMaximumHeight(300)
-    container.setMinimumWidth(170)
-    container.setMaximumWidth(300)
+        # Mini Pantalla del script
+        self.pantalla = QWidget()
+        self.pantalla.setDisabled(True)  # Deshabilitar la interacción
 
-    # Almacenar los botones en un diccionario dentro de mainUI
-    if not hasattr(mainUI, 'botones_estado'):
-        mainUI.botones_estado = {}
-    mainUI.botones_estado[id_script] = boton_estado
+        # Añadir widgets al layout
+        self.main_layout.addLayout(self.button_layout)
+        self.main_layout.addWidget(self.pantalla)
+        self.main_layout.addStretch()
 
-    return container
+        # Establecer el layout en el contenedor
+        layout = QVBoxLayout(self)
+        layout.addWidget(self.group_box)
+        layout.setContentsMargins(0, 0, 0, 0)  # Eliminar márgenes
+        self.setLayout(layout)
 
-def estado_button(mainUI, id_script):
-    boton_estado = mainUI.botones_estado[id_script]
-    if boton_estado.isChecked():
-        boton_estado.setText("Detener")
-        boton_estado.setChecked(True)
-    else:
-        boton_estado.setText("Iniciar")
-        boton_estado.setChecked(False)
+    def toggle_estado(self):
+        if self.boton_estado.isChecked():
+            self.boton_estado.setText("Detener")
+            self.boton_estado.setChecked(True)
+        else:
+            self.boton_estado.setText("Iniciar")
+            self.boton_estado.setChecked(False)
+
+    def mostrar_ventana_script(self):
+        if self.ventana_script == None:
+            self.ventana_script = venatana_pantalla_and_log(self.id_script, self.nombre_script)
+        self.ventana_script.show()
+
+class venatana_pantalla_and_log(QWidget):
+    def __init__(self, id_script, nombre_script):
+        super().__init__()
+        # Atributos
+        self.id_script = id_script
+        self.nombre_script = nombre_script
+        # Tamaño mínimo de la ventana
+        self.setMinimumSize(800, 600)
+
+        # Layout horizontal para la pantalla y el log
+        self.layout_horizontal = QHBoxLayout()
+
+        # Pantalla del script que cargará las capturas de pantalla del script
+        self.pantalla = QWidget()
+        self.pantalla.setDisabled(True)
+
+        # Campo adicional para mostrar el log
+        self.campo_adicional = QTextEdit()
+        self.campo_adicional.setPlaceholderText("Registros de ejecución")
+        self.campo_adicional.setReadOnly(True)
+
+        self.layout_horizontal.addWidget(self.pantalla)
+        self.layout_horizontal.addWidget(self.campo_adicional)
+
+        self.setLayout(self.layout_horizontal)
+
+# Función para crear y retornar una instancia de ScriptContainer
+def create_script_container(id_script, nombre_script):
+    return ScriptContainer(id_script, nombre_script)
+

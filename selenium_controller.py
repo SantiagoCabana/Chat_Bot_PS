@@ -5,11 +5,18 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.common.exceptions import NoSuchElementException
+from PyQt5.QtCore import QThread, pyqtSignal, pyqtSlot
 import xml.etree.ElementTree as ET
 from datetime import datetime
 import os, socket, asyncio
+import json
 import hashlib
 import time
+import uuid
+
+from googleapiclient.discovery import build
+from google.oauth2.credentials import Credentials
+import os
 
 class SeleniumController:
     def __init__(self, nombre_script):
@@ -17,19 +24,24 @@ class SeleniumController:
             raise ValueError("El nombre del script debe ser una cadena")
         
         self.ruta_xml = 'DATA/resource/xml/'
+        self.ruta_json = 'DATA/resource/json/'
         self.nombre_script = nombre_script
         self.puerto = self.convertir_nombre_a_puerto(nombre_script)
         self.driver = None
         self.running = False
+        self.interval_id = None
+
+        self.server = None
 
         self.lista_chats = []
-
+        
+        self.lista_xpath = None
         self.mensajes_list = "//div[@class='x3psx0u xwib8y2 xkhd6sd xrmvbpv']"
 
-        #iniciar funciones
         self.crear_archivos()
 
-    async def iniciar(self):
+    @pyqtSlot()
+    def iniciar(self):
         try:
             self.user_data_directory = os.path.join(self.get_executable_dir(), 'DATA', 'SCRIPTS', f'{self.nombre_script}')
             if not os.path.exists(self.user_data_directory):
@@ -53,8 +65,8 @@ class SeleniumController:
             options.add_argument("--lang=es")
             options.add_argument(f"--remote-debugging-port={self.puerto}")
 
-            loop = asyncio.get_event_loop()
-            self.driver = await loop.run_in_executor(None, webdriver.Chrome, options)
+            self.driver = webdriver.Chrome(options=options)
+            
             self.driver.get('https://web.whatsapp.com/')
             self.running = True
 
@@ -62,36 +74,37 @@ class SeleniumController:
             self.running = False
             print(f"Error: {e}")
         #inciar la funcon de accion
-        await self.accion()
+        self.accion()
 
-    async def accion(self):
+    def accion(self):
         try:
             #esperar carga de mensajes
             self.esperar_carga_mensajes()
 
-            self.ordenar_chats()
-
+            #desselecionar filtro
+            self.deselect_filtro()
+            time.sleep(5)
+            self.selecionar_filtro("no_agendado")
             time.sleep(0.5)
-            
-            #informe de chats
-            self.informe_chats()
-
+            self.ordenar_chats()
+            time.sleep(0.5)
             print("Buscando chat no leido")
             #identificar chats no leidos
             self.selecionar_chat()
-            #escritura de mensaje
-            mensaje = "Hola, soy Sam un ChatBot de prueba, causa :v"
-            self.escribir_chat(mensaje)
-            time.sleep(0.5)
+            time.sleep(5000)
             #detectar nuevos mensajes:
             self.leer_mensaje()
-            time.sleep(5)
             #precionar esc para cerrar el chat
             accion = ActionChains(self.driver)
             accion.send_keys(Keys.ESCAPE).perform()
             time.sleep(5)
         except Exception as e:
             print(f"Error en la función accion: {e}")
+
+    def detener(self):
+        if self.driver:
+            self.driver.quit()
+            self.running = False
 
     def conversando(self,data):
         pass
@@ -118,33 +131,113 @@ class SeleniumController:
                 #crear el archivo xml vacio osea 100% blanco
                 with open(filename, 'w', encoding='utf-8') as file:
                     file.write("")
-                
+    
+    #funcion para selecionar el filtro de busqueda de chats
+    def selecionar_filtro(self,tipo):
+        #selecionar el filtro de busqueda de chats
+        self.boton_filtro()
+        #habir el filtro de busqueda si esta desactivado osea q tenga el aria_pressed = false .. //button[@data-tab='4' and @aria-label='Menú de filtros de chats' and @aria-pressed='false']
+        if tipo == "no_leidos":
+            #selecionar chats no leidos
+            filtro_xpath = "//ul[@class='_ak5b']//li[div/div/span[@data-icon='search-unread']]"
+            self.lista_xpath = "//div[@aria-label='Lista de chats' and @role='grid']"
+        elif tipo == "contactos":
+            #selecionar contactos
+            filtro_xpath = "//ul[@class='_ak5b']//li[div/div/span[@data-icon='contacts']]"
+        elif tipo == "no_agendado":
+            #selecionar no agendados
+            filtro_xpath = "//ul[@class='_ak5b']//li[div/div/span[@data-icon='non-contacts']]"
+            self.lista_xpath = "//div[@aria-label='Resultados de la búsqueda.' and @role='grid']"
+        elif tipo == "grupos":
+            #selecionar grupos
+            filtro_xpath = "//ul[@class='_ak5b']//li[div/div/span[@data-icon='group']]"
+        else:
+            print("Tipo de filtro no reconocido")
+            return
+
+        #esperar a que el filtro este presente
+        try:
+            filtro = self.driver.find_element(By.XPATH, filtro_xpath)
+            filtro.click()
+        except NoSuchElementException:
+            print("No se pudo encontrar el filtro espedificado")
+
+    def boton_filtro(self):
+        #selecionar el boton de filtro de busqueda de chats pero verificar si esta activado o desactivado
+        try:
+            filtro = self.driver.find_element(By.XPATH, "//button[@data-tab='4' and @aria-label='Menú de filtros de chats' and @aria-pressed='false']")
+            filtro.click() #activar filtro
+            print("Boton filtro encontrado y activado")
+        except NoSuchElementException:
+            #llamar el desacrivador de filtro
+            print("No se pudo encontrar el boton filtro, verificando si esta activado y luego activarlo")
+            self.deselect_filtro()
+            time.sleep(0.5)
+            self.boton_filtro()
+
+    def deselect_filtro(self,open=False):
+        try:
+            if open:
+                filtro = self.driver.find_element(By.XPATH, "//button[@data-tab='4' and @aria-label='Menú de filtros de chats' and @aria-pressed='false']")
+                filtro.click()
+                print("Boton filtro encontrado y activado")
+                return
+            filtro = self.driver.find_element(By.XPATH, "//button[@data-tab='4' and @aria-label='Menú de filtros de chats' and @aria-pressed='true']")
+            filtro.click()
+            print("Boton filtro encontrado y desactivado")
+            #precionar esc para cerrar el filtro y el  chat
+            accion = ActionChains(self.driver)
+            accion.send_keys(Keys.ESCAPE).perform()
+            print("Boton filtro encontrado y desactivado")
+        except NoSuchElementException:
+            print("No se pudo encontrar el boton filtro")
+
     #-----------------------------------Funciones de HTML-----------------------------------
-    #ordenar chats en el html
+    # Ordenar chats en el HTML
     def ordenar_chats(self):
         # Localizar la lista de chats
-        chat_list = self.driver.find_element(By.XPATH, "//div[@aria-label='Lista de chats' and @role='grid']")
+        chat_list = self.driver.find_element(By.XPATH, self.lista_xpath)
         
-        # Inyectar y ejecutar el script JavaScript para ordenar los chats
+        # Inyectar y ejecutar el script JavaScript para ordenar los chats cada 0.5 segundos y almacenar el ID del intervalo
         script = """
         const chatList = arguments[0];
-        const chats = Array.from(chatList.children);
-        chats.sort((a, b) => {
-            const translateY_A = parseInt(a.style.transform.match(/translateY\\((\\d+)px\\)/)[1]);
-            const translateY_B = parseInt(b.style.transform.match(/translateY\\((\\d+)px\\)/)[1]);
-            return translateY_A - translateY_B;
-        });
-        chats.forEach(chat => chatList.appendChild(chat));
+        function ordenarChats() {
+            const chats = Array.from(chatList.children);
+            chats.sort((a, b) => {
+                const translateY_A = parseInt(a.style.transform.match(/translateY\\((\\d+)px\\)/)[1]);
+                const translateY_B = parseInt(b.style.transform.match(/translateY\\((\\d+)px\\)/)[1]);
+                return translateY_A - translateY_B;
+            });
+            chats.forEach(chat => chatList.appendChild(chat));
+        }
+        const intervalId = setInterval(ordenarChats, 500); // Ejecutar cada 0.5 segundos
+        return intervalId;  // Devolver el ID del intervalo
         """
-        self.driver.execute_script(script, chat_list)
+        interval_id = self.driver.execute_script(script, chat_list)
+        self.interval_id = interval_id  # Almacenar el ID del intervalo en la instancia
+        
+        print("Script de ordenación de chats iniciado con ID:", self.interval_id)
 
-        print("Chats ordenados")
-    
+    # Remover el bucle de script de ordenación de chats específico
+    def remover_orden_chats(self):
+        if hasattr(self, 'interval_id') and self.interval_id is not None:
+            # Inyectar y ejecutar el script JavaScript para detener el intervalo específico
+            script = f"""
+            clearInterval({self.interval_id});
+            console.log('Intervalo con ID {self.interval_id} detenido');
+            """
+            self.driver.execute_script(script)
+            print(f"Script de ordenación de chats removido con ID: {self.interval_id}")
+            self.interval_id = None
+        else:
+            print("No hay un script de ordenación de chats en ejecución.")
+
+
     #-----------------------------------Funciones de chat-----------------------------------
 
     #Informe de la lista de chats:
     def informe_chats(self):
-        chat_list = self.driver.find_element(By.XPATH, "//div[@aria-label='Lista de chats' and @role='grid']")
+        chat_list = self.driver.find_element(By.XPATH, self.lista_xpath)
         # Continuar con el procesamiento de los chats ordenados
         all_chats = chat_list.find_elements(By.XPATH, ".//div[contains(@class, '_aou8')]")
         count_con_nombre = 0
@@ -189,7 +282,7 @@ class SeleniumController:
     def guardar_informe(self, informacion, tipo):
         if tipo == "chat_list":
             self.guardar_informe_chat_list(informacion)
-
+    
     def guardar_informe_chat_list(self, informacion):
         filename = os.path.join(self.ruta_xml, f"informes_{self.nombre_script}.xml")
         if os.path.exists(filename) and os.path.getsize(filename) > 0:
@@ -207,7 +300,7 @@ class SeleniumController:
             chat_list_element = ET.SubElement(root, "chat_list_no_read")
         # Añadimos o actualizamos la información con fecha y hora
         for chat in informacion:
-            id_chat = hashlib.md5(chat.encode()).hexdigest()[:6]
+            id_chat = self.generar_id_fijo(chat)
             fecha = datetime.now().strftime("%d/%m/%Y")
             hora = datetime.now().strftime("%H:%M:%S")
             # Buscamos si ya existe un chat con el mismo id
@@ -225,38 +318,60 @@ class SeleniumController:
         tree = ET.ElementTree(root)
         tree.write(filename, encoding="utf-8", xml_declaration=True)
 
+    def generar_id_fijo(self, valor):
+        # Crear un objeto hash SHA-256
+        hash_obj = hashlib.sha256()
+        # Actualizar el objeto hash con el valor codificado en bytes
+        hash_obj.update(valor.encode('utf-8'))
+        # Obtener el hash en formato hexadecimal
+        hash_hex = hash_obj.hexdigest()
+        # Convertir el hash hexadecimal a un número entero
+        hash_int = int(hash_hex, 16)
+        # Tomar los primeros 6 dígitos del número entero como el ID fijo
+        return str(hash_int)[:6]
+
     #procesar respuesta
     def procesar_respuesta(self):
         pass
 
     def selecionar_chat(self):
         # Abrir el primer chat no leido no leido con nombre q esta dentro de la lista de chats pero solo selecionar el primero sin leer de todos
-        lista_chats_xpath = "//div[@aria-label='Lista de chats' and @role='grid']"
-        chat_con_nombre_xpath = "//div[@class='x10l6tqk xh8yej3 x1g42fcv']//div[@class='_aou8 _aj_h']/span[contains(@class, 'x1iyjqo2') and not(starts-with(text(), '+'))]/ancestor::div[@class='x10l6tqk xh8yej3 x1g42fcv']//span[(@aria-label='No leídos' or contains(@aria-label, 'no leídos'))]"
-        chat_sin_nombre_xpath = "//div[@class='x10l6tqk xh8yej3 x1g42fcv']//div[@class='_aou8 _aj_h']/span[contains(@class, 'x1iyjqo2') and starts-with(text(), '+')]/ancestor::div[@class='x10l6tqk xh8yej3 x1g42fcv']//span[(@aria-label='No leídos' or contains(@aria-label, 'no leídos'))]"
-
+        lista_chats_xpath = self.lista_xpath
+        chat_sin_nombre_xpath_no_tag ="//div[@class='x10l6tqk xh8yej3 x1g42fcv' and not(descendant::div[contains(@class, '_aj_l')]//div[contains(@class, 'x1rg5ohu') and contains(@class, 'x2lah0s') and contains(@class, 'x16dsc37')])]//div[@class='_aou8 _aj_h']/span[contains(@class, 'x1iyjqo2') and starts-with(text(), '+')]/ancestor::div[@class='x10l6tqk xh8yej3 x1g42fcv']//span[(@aria-label='No leídos' or contains(@aria-label, 'mensaje no leído') or contains(@aria-label, 'no leídos'))]"
         # Esperar a que la lista de chats esté presente
         WebDriverWait(self.driver, 10).until(EC.presence_of_element_located((By.XPATH, lista_chats_xpath)))
         print("Lista de chats presente")
 
+        self.remover_orden_chats()
         #selecionar un chat sin nombre y si no hay sin nombre se selecionara el que tiene nombre
-        try:
-            # Encontrar todos los chats no leídos con nombre
-            chats_no_leidos = self.driver.find_elements(By.XPATH, chat_sin_nombre_xpath)
-        except NoSuchElementException:
-            try:
-                #en caso q no haya chats sin nombre se selecionara el que tiene nombre
-                chats_no_leidos = self.driver.find_elements(By.XPATH, chat_con_nombre_xpath)
-            except NoSuchElementException:
-                print("No se encontraron chats no leídos")
-                return
+
+        # Intentar encontrar todos los chats no leídos sin nombre
+        chats_no_leidos = self.driver.find_elements(By.XPATH, chat_sin_nombre_xpath_no_tag)
 
         if chats_no_leidos:
-            # Seleccionar el primer chat no leído con nombre
-            primer_chat_no_leido = chats_no_leidos[0]
-            primer_chat_no_leido.click()
+            try:
+                # Seleccionar el primer chat no leído sin nombre
+                primer_chat_no_leido = chats_no_leidos[0]
+                primer_chat_no_leido.click()
+                print("Chat no leído seleccionado")
+            except:
+                print("No se pudo seleccionar el chat no leído")
         else:
             print("No hay chats no leídos con nombre.")
+            try:
+                print("No se encontraron chats no leídos sin nombre\n aplicando filtro")
+                # Si no se encuentran chats no leídos, deseleccionar el filtro
+                self.deselect_filtro(open=True)
+                name_tag = "Video Explicativo 40%"
+                print(f"seleccionando la etiqueta: {name_tag}") 
+                # Construir el XPath para el nuevo filtro basado en la etiqueta
+                etiqueta = f"//li[contains(@class, '_aj-r') and contains(@class, '_aj-q') and contains(@class, '_aj-_')]//button[contains(@class, 'x9f619')]//div[contains(@class, 'x3nfvp2')]//div[contains(@class, 'x78zum5')]//svg[contains(@class, 'x1rg5ohu')]//span[contains(@class, 'x1f6kntn')]//span[@class='_ao3e' and text()='{name_tag}']"
+                # Intentar encontrar el elemento del filtro y hacer clic en él
+                filtro = self.driver.find_element(By.XPATH, etiqueta)
+                filtro.click()
+            except NoSuchElementException:
+                # Si no se encuentra el filtro, imprimir un mensaje y retornar
+                print("No se encontraron chats no leídos")
 
     #funcion para leer el chat y ver el estatus de nuestro mensaje
     def leer_chat(self):
@@ -269,23 +384,194 @@ class SeleniumController:
     def mensaje_bienvenida(self):
         pass
 
+    def agendar_contacto_api_contacts_google(self, id, numero):
+        nombre = f'{self.nombre_script}_{id}'
+        
+        # Cargar el token de inicio de sesión
+        token_path = os.path.join(self.get_executable_dir(),'DATA', 'tokens', 'contacts_token.json')
+        creds = Credentials.from_authorized_user_file(token_path, ['https://www.googleapis.com/auth/contacts'])
+        
+        # Crear el servicio de la API
+        service = build('people', 'v1', credentials=creds)
+        
+        # Crear el cuerpo del contacto
+        contact_body = {
+            'names': [{'givenName': nombre}],
+            'phoneNumbers': [{'value': numero}]
+        }
+        
+        try:
+            contact = service.people().createContact(body=contact_body).execute()
+            print(f'Contacto creado: {contact.get("names")[0].get("displayName")}')
+            return nombre
+        except Exception as e:
+            print(f'Error al crear el contacto: {e}')
+            return None
+        
+    def save_contact_list(self, nombre):
+        print(f"Guardando contacto en XML: {nombre}")
+        self.ruta = os.path.join(self.get_executable_dir(), 'DATA', 'history', 'registro_general_contacts.xml')
+        
+        # Verificar si el archivo XML existe
+        if not os.path.exists(self.ruta):
+            root = ET.Element("contacts")
+            tree = ET.ElementTree(root)
+            tree.write(self.ruta, encoding='utf-8', xml_declaration=True)
+        
+        try:
+            tree = ET.parse(self.ruta)
+            root = tree.getroot()
+        except ET.ParseError:
+            root = ET.Element("contacts")
+            tree = ET.ElementTree(root)
+            tree.write(self.ruta, encoding='utf-8', xml_declaration=True)
+            tree = ET.parse(self.ruta)
+            root = tree.getroot()
+        
+        # Generar un ID único fijo
+        id = self.generar_id_fijo(nombre)
+        # Formatear el numero sin espacios para guardar en la API
+        nombre_formateado = nombre.replace(' ', '')
+        nombre_sin_plus = self.formatear_numero(nombre)
+        
+        # Verificar si ya existe un contacto con el mismo ID y nombre o contact
+        for contacto in root.findall("chat"):
+            if (contacto.get("id") == id and contacto.get("contact") == nombre_formateado) or \
+               (contacto.get("id") == id and contacto.get("nombre") == nombre_sin_plus):
+                print(f"El contacto {nombre_formateado} ya existe con el mismo ID.")
+                return id, nombre_sin_plus
+            
+        # Agendar el contacto usando la API de Google Contacts
+        nombre_contacto = self.agendar_contacto_api_contacts_google(id, nombre_formateado)
+        
+        # Agregar el nuevo contacto
+        contacto = ET.Element("chat", nombre=nombre_sin_plus, id=id, contact=nombre_contacto)
+        root.append(contacto)
+        tree.write(self.ruta, encoding='utf-8', xml_declaration=True)
+    
+        return id, nombre_sin_plus
+
+    def save_chat_in_xml(self, nombre,id, chat):
+        print(f"Guardando chat en XML: {nombre}")
+        self.ruta = os.path.join(self.get_executable_dir(), 'DATA', 'history', 'chats', f'{nombre}_{id}.xml')
+        
+        # Verificar si el archivo XML existe
+        if not os.path.exists(self.ruta):
+            root = ET.Element("chats")
+            chat_node = ET.SubElement(root, "chat")
+            tree = ET.ElementTree(root)
+            tree.write(self.ruta, encoding='utf-8', xml_declaration=True)
+        else:
+            try:
+                tree = ET.parse(self.ruta)
+                root = tree.getroot()
+            except ET.ParseError:
+                # Si el archivo está vacío o mal formado, crear un nuevo archivo XML
+                root = ET.Element("chats")
+                chat_node = ET.SubElement(root, "chat")
+                tree = ET.ElementTree(root)
+                tree.write(self.ruta, encoding='utf-8', xml_declaration=True)
+                tree = ET.parse(self.ruta)
+                root = tree.getroot()
+        
+        # Buscar el nodo `chat`
+        chat_node = root.find("chat")
+        
+        if chat_node is None:
+            raise ValueError("No se encontró el nodo <chat>")
+        
+        # Recopilar todos los mensajes después de los últimos 3 separadores
+        mensajes_existentes = []
+        separadores_encontrados = 0
+        for elem in reversed(chat_node):
+            if elem.tag == "separator":
+                separadores_encontrados += 1
+                if separadores_encontrados == 3:
+                    break
+            if elem.tag == "mensaje":
+                mensajes_existentes.append((elem.get("tipo"), elem.text, elem.get("hora")))
+        
+        # Invertir la lista para mantener el orden original
+        mensajes_existentes.reverse()
+        
+        # Filtrar los mensajes nuevos para evitar duplicados y mensajes eliminados
+        mensajes_filtrados = []
+        for mensaje in chat:
+            # Extraer la hora y el texto del mensaje
+            hora = mensaje["texto"][-5:].strip()
+            texto = mensaje["texto"][:-5].strip()
+            
+            # Asegurarse de que la hora tenga el formato correcto
+            if len(hora) == 4:  # Caso donde la hora es de un solo dígito (e.g., "6:08")
+                hora = "0" + hora
+            
+            # Verificar si el mensaje ya existe (comparando tipo, texto y hora)
+            if (mensaje["tipo"], texto, hora) not in mensajes_existentes:
+                mensajes_filtrados.append({
+                    "tipo": mensaje["tipo"],
+                    "texto": texto,
+                    "hora": hora
+                })
+        
+        # Añadir una etiqueta separadora solo si hay mensajes nuevos
+        if mensajes_filtrados:
+            separator = ET.Element("separator")
+            chat_node.append(separator)
+            
+            # Agregar los nuevos mensajes filtrados
+            for mensaje in mensajes_filtrados:
+                if mensaje["texto"]:  # Verificar que el texto no esté vacío
+                    mensaje_elem = ET.Element("mensaje", tipo=mensaje["tipo"], hora=mensaje["hora"])
+                    mensaje_elem.text = mensaje["texto"]
+                    chat_node.append(mensaje_elem)
+        
+        tree.write(self.ruta, encoding='utf-8', xml_declaration=True)
+    
     def leer_mensaje(self):
-        # imprimir nuevos mensajes
         print("leyendo mensajes")
         mensajes_lista = self.mensajes_list
-        separador_mensajes_nuevos = "//div[@class='_agtb focusable-list-item' and @tabindex='-1']/span[@class='_agtk' and @aria-live='polite']"
-        #agregar en una lista temporal los mensajes nuevos los cuales seran los q estan separados por el separador xq la lista de el html lo debe de leer desde abajo hacia arriba y parar hasta el separador
+        
+        self.nombre = "//*[@id='main']/header/div[2]/div[1]/div/div/span[1]"
+        nombre_chat = self.driver.find_element(By.XPATH, self.nombre).text
+        print(f"Chat: {nombre_chat}")
+        
+        # Guardar el contacto y obtener el ID
+        id,nombre_formateado = self.save_contact_list(nombre_chat)
+        
         mensajes_nuevos = []
-        mensajes = self.driver.find_elements(By.XPATH, mensajes_lista)
+        
+        # XPath para capturar todos los mensajes en el orden en que aparecen
+        xpath = "//div[contains(@class, 'message-in') or contains(@class, 'message-out')]"
+        
+        mensajes = self.driver.find_elements(By.XPATH, xpath)
         for mensaje in mensajes:
             if mensaje.get_attribute("aria-live") == "polite":
                 break
-            mensajes_nuevos.append(mensaje)
-        #imprimir mensajes nuevos
+            tipo = "mio" if "message-out" in mensaje.get_attribute("class") else "el"
+            try:
+                hora_element = mensaje.find_element(By.XPATH, ".//span[contains(@class, 'copyable-text')]")
+                hora = hora_element.get_attribute("data-pre-plain-text").split('] ')[0][1:]
+            except:
+                hora = ""
+            mensajes_nuevos.append({"tipo": tipo, "texto": mensaje.text, "hora": hora})
+        
         for mensaje in mensajes_nuevos:
-            print(mensaje.text)
+            print(mensaje["texto"])
+        
+        self.save_chat_in_xml(nombre_formateado,id, mensajes_nuevos)
 
-    #escribir excepciones
+    # Formatear el número dependiendo del país
+    def formatear_numero(self, numero):
+        # Eliminar el símbolo '+' y los espacios
+        numero_formateado = numero.replace('+', '').replace(' ', '')
+        return numero_formateado
+    
+    #formatear uuid para q este sin guiones
+    def formatear_uuid(self, uuid):
+        return uuid.replace('-', '')
+    
+    #-----------------------------------Acciones de chat-----------------------------------
+    
     def escribir_excepcion(self, caso, excepcion):
         print(f"Escribiendo excepción en el chat: {caso}")
         input_element = self.seleccionar_input()
@@ -353,12 +639,18 @@ class SeleniumController:
     
     #esperar a que cargue todos los mensages
     def esperar_carga_mensajes(self):
-        # Esperar a que aparezca el botón de nuevo chat
-        WebDriverWait(self.driver, 10).until(
-            EC.presence_of_element_located((By.XPATH, "//div[@role='button' and @aria-label='Nuevo chat']"))
-        )
-        print("whatsapp cargado")
-        time.sleep(2)
+        while True:
+            try:
+                # Esperar a que aparezca el botón de nuevo chat
+                WebDriverWait(self.driver, 10).until(
+                    EC.presence_of_element_located((By.XPATH, "//div[@role='button' and @aria-label='Nuevo chat']"))
+                )
+                print("whatsapp cargado")
+                time.sleep(2)
+                break
+            except:
+                print("Esperando a que cargue WhatsApp")
+                time.sleep(2)
     
     #escanear lista de chats
     def escanear_chats(self):
@@ -393,16 +685,8 @@ class SeleniumController:
         while not self.puerto_disponible(puerto):
             puerto += 1
         return puerto
-    
-    async def detener(self):
-        if self.driver:
-            self.driver.quit()
-            self.running = False
-
 
 # Ejemplo de uso
 if __name__ == "__main__":
     controller = SeleniumController("DATA1")
-    asyncio.run(controller.iniciar())
-    asyncio.run(controller.detener())
-
+    controller.iniciar()

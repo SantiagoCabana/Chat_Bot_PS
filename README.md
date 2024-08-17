@@ -2,9 +2,7 @@
 
 # Separador de mensajes nuevos
 ```xpath
-
 //div[@class='_agtb focusable-list-item' and @tabindex='-1']/span[@class='_agtk' and @aria-live='polite']
-
 ```
 
 # General
