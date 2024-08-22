@@ -83,12 +83,15 @@ class DesplegableArea(QWidget):
             print(f"Error al desplegar el área: {e}")
 
 class MovableWidget(QGraphicsItem):
-    def __init__(self, parent, color, widget_id, tipo="rectangle",nombre=None):
+    def __init__(self, parent, color, widget_id, can_delete, opciones, connections, tipo="rectangle",nombre=None):
         super().__init__()
         self.parent = parent
         self.nombre = nombre
         self.color = QColor(color)
         self.widget_id = widget_id
+        self.can_delete = can_delete
+        self.opciones = opciones
+        self.connections = connections
         self.connections = []  # Agregamos este atributo para mantener las conexiones
         self.setFlag(QGraphicsItem.ItemIsMovable)
         self.setFlag(QGraphicsItem.ItemIsSelectable)

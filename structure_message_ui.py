@@ -1,14 +1,17 @@
-import os
+import os, sys
 from PyQt5.QtWidgets import (QLabel, QMessageBox, QScrollArea, QPushButton, QVBoxLayout, QHBoxLayout,
                              QGraphicsView, QGraphicsScene, QGraphicsItem, QMenu, QAction, QGraphicsProxyWidget,
                              QApplication, QLineEdit, QTextEdit, QComboBox, QFileDialog, QLayout,
                              QListWidget, QWidget,QGraphicsLineItem,QGraphicsPathItem, QGraphicsRectItem
-                             , QGraphicsTextItem, QGraphicsEllipseItem, QGraphicsWidget, QGraphicsLayoutItem
-                             ,QCheckBox,QFrame,QSizePolicy,QScrollArea,QListWidgetItem,QAbstractItemView)
+                             ,QGraphicsTextItem, QGraphicsEllipseItem, QGraphicsWidget, QGraphicsLayoutItem
+                             ,QCheckBox,QFrame,QSizePolicy,QScrollArea,QListWidgetItem,QAbstractItemView
+                             ,QSpacerItem,QGridLayout)
 
-from PyQt5.QtCore import Qt, QPointF, QRectF, QLineF, QSizeF, QPropertyAnimation, QEasingCurve
-from PyQt5.QtGui import QPainter, QPen, QPainterPath, QBrush, QColor, QWheelEvent, QMouseEvent
+
+from PyQt5.QtCore import Qt, QPointF, QRectF, QLineF, QSizeF, QPropertyAnimation, QEasingCurve, QTimer
+from PyQt5.QtGui import QPainter, QPen, QPainterPath, QBrush, QColor, QWheelEvent, QMouseEvent,QFont
 import random
+import time
 import xml.etree.ElementTree as ET
 #importar el area zoomable
 from functions.zoom_area import ZoomableGraphicsView
@@ -114,570 +117,281 @@ class ConditionWidget:
 class StructureUI(QWidget):
     def __init__(self, MainUI):
         super().__init__()
-        self.MainUI = MainUI
-        self.widgets = []
-        self.connections = []
-        self.connecting_point = None
-        self.is_connecting = False
-        self.next_widget_id = 1
-        self.connecting_widget = None
         self.setup_ui()
-        self.add_widget_movable("gray", widget_id=None,tipo="pentagon")
-        self.show_structure_area()
+        self.widget_count = 0  # Contador de widgets añadidos, empieza en 0
+        self.nombre_flujo = 0
 
     def setup_ui(self):
-        main_layout = QHBoxLayout(self)
-
-        self.structure_layout = QVBoxLayout()
-        self.setup_structure_area()
-        main_layout.addLayout(self.structure_layout)
-
-        self.edit_layout = QVBoxLayout()
-        self.setup_edit_area()  # Asegúrate de que esto se llame aquí
-        main_layout.addLayout(self.edit_layout)
-
-        self.edit_layout_welcome = QVBoxLayout()
-        self.setup_edit_area_welcome()
-        main_layout.addLayout(self.edit_layout_welcome)
-
-        self.edit_layout_conditions = QVBoxLayout()
-        self.setup_conditions_area_triangle()
-        main_layout.addLayout(self.edit_layout_conditions)
-
-    def clear_edit_layout(self):
-        self.edit_id_label.setText("")
-        self.edit_message.clear()
-        self.edit_id_label_w.setText("")
-        self.edit_message_w.clear()
-        self.quick_response_name.clear()
-
-    def ocultar_areas(self):
-        self.structure_widget.hide()
-        self.edit_widget.hide()
-        self.edit_widget_welcome.hide()
-        self.conditions_area_widget.hide()
-
-    def show_edit_layout_welcome(self):
-        self.ocultar_areas()
-        self.edit_widget_welcome.show()
-    
-    def show_edit_layout_conditions(self):
-        self.ocultar_areas()
-        self.conditions_area_widget.show()
-    
-    def show_structure_area(self):
-        self.ocultar_areas()
-        self.structure_widget.show()
-
-    def show_edit_layout(self, widget):
-        self.clear_edit_layout()
-        self.ocultar_areas()
+        # Crear un layout vertical
+        main_qframe = QVBoxLayout(self)
         
-        if widget.widget_id is None:
-            # Colocar el id en el QLineEdit que será el id del widget
-            self.edit_id_label_w.setText("Nuevo Widget")
-            self.edit_message_w.setPlainText("Aquí va la configuración especial")
-            self.show_edit_layout_welcome()
-        elif widget.tipo == "triangle":
-            self.edit_id_label.setText("Editando Widget triangle")
-            self.edit_message.setPlainText("Aquí va la configuración especial")
-            self.show_edit_layout_conditions()
-        elif widget.tipo == "square":
-            self.edit_id_label.setText("Editando Widget square")
-            self.edit_message.setPlainText("Aquí va la configuración especial")
-            self.edit_widget.show()
-        else:
-            self.edit_id_label.setText(f"Editando Widget {widget.widget_id}")
-            self.edit_message.setPlainText("\n".join(widget.connections))
-            self.edit_widget.show()
-
-    def setup_edit_area_welcome(self):
-        self.edit_widget_welcome = QWidget()
-        edit_layout_welcome = QVBoxLayout()
-        self.edit_widget_welcome.setLayout(edit_layout_welcome)
-    
-        # Áreas de configuración
-        self.areas_edit_w = QVBoxLayout()
-    
-        self.edit_id_label_w = QLabel()
-        edit_id_label_w = QLabel("Titulo del Widget:")
-        self.areas_edit_w.addWidget(edit_id_label_w)
-    
-        self.edit_id_label_w = QLineEdit()
-        self.areas_edit_w.addWidget(self.edit_id_label_w)
-    
-        # Mensaje de bienvenida
-        self.label_edit_w = QLabel("Mensaje de Bienvenida:")
-        self.areas_edit_w.addWidget(self.label_edit_w)
-    
-        # Checkbox para habilitar respuesta rápida
-        self.quick_response_checkbox = QCheckBox("Usar respuesta rápida")
-        self.quick_response_checkbox.stateChanged.connect(self.toggle_quick_response)
-        self.areas_edit_w.addWidget(self.quick_response_checkbox)
-    
-        # QLineEdit para el nombre de la respuesta rápida
-        self.quick_response_name = QLineEdit()
-        self.quick_response_name.setPlaceholderText("Nombre de la respuesta rápida")
-        self.quick_response_name.setVisible(False)
-        self.areas_edit_w.addWidget(self.quick_response_name)
-    
-        # QTextEdit para el mensaje de bienvenida
-        self.edit_message_w = QTextEdit()
-        #alto minimo del textedit
-        self.edit_message_w.setMinimumHeight(250)
-        self.areas_edit_w.addWidget(self.edit_message_w)
-
-        # Widgets
-        self.upload_layout = QHBoxLayout()
-        self.b_layout = QVBoxLayout()
-        self.edit_file_button_w = QPushButton("Subir Archivo")
-        self.cancelar_button_w = QPushButton("Cancelar")
-    
-        self.b_layout.addWidget(self.edit_file_button_w)
-        self.b_layout.addWidget(self.cancelar_button_w)
-    
-        self.upload_layout.addStretch()
-        self.upload_layout.addLayout(self.b_layout)
-    
-        # Convertir el b_layout en un widget
-        self.widget_layout = QWidget()
-        self.widget_layout.setLayout(self.upload_layout)
+        # Activar bordes
+        self.main_layout_h = QVBoxLayout()
         
-        # Archivos
-        self.desplegador_w = DesplegableArea("Desplegar", [self.widget_layout])
-        self.areas_edit_w.addWidget(self.desplegador_w)
-    
-        # Condiciones de script
-        self.desplegador_script_w = DesplegableArea("Script", [QLabel("Aquí va el script")])
-        self.areas_edit_w.addWidget(self.desplegador_script_w)
-    
-        # Área configuración lateral
-        self.areas_edit_w_welcome = QHBoxLayout()
-        self.list_config_welcome = QVBoxLayout()
-        self.list_config_welcome.addWidget(QLabel("Configuraciones"))
-        self.list_config_w = QListWidget()
-        #ancho maximo de la lista de configuraciones
-        self.list_config_w.setMaximumWidth(100)
-        self.list_config_welcome.addWidget(self.list_config_w)
-    
-        # Crear un QWidget y establecer su layout
-        self.areas_edit_w_widget = QWidget()
-        self.areas_edit_w_widget.setLayout(self.areas_edit_w)
+        # Título
+        layout_titulo = QHBoxLayout()
+        titulo = QLabel("NUEVO FLUJO")
+        font = QFont()
+        # Tamaño de la fuente del título
+        font.setPointSize(15)
+        titulo.setFont(font)
+        titulo.setAlignment(Qt.AlignCenter)
+        layout_titulo.addWidget(titulo)
+        layout_titulo.addStretch()
+        self.main_layout_h.addLayout(layout_titulo)
+
+        self.scroll_area = QScrollArea()
+        scroll_area_widget = QWidget()
+        self.scroll_area_layout = QGridLayout(scroll_area_widget)  # Cambiado a QGridLayout
+        self.scroll_area_layout.setAlignment(Qt.AlignTop | Qt.AlignLeft)
         
-        # Configurar el QScrollArea con el nuevo QWidget
-        self.scroll_areas_w = QScrollArea()
-        self.scroll_areas_w.setWidgetResizable(True)
-        self.scroll_areas_w.setWidget(self.areas_edit_w_widget)
+        # Cuadro que será un botón con el símbolo de + en el centro del cuadro
+        self.button_add = QPushButton()
+        ruta_svg_plusa = os.path.join(self.get_executable_dir(), 'Z_interface', 'svg', 'add.svg')
+        ruta_svg_plus = ruta_svg_plusa.replace("\\", "/")
+        self.button_add.setStyleSheet(f"""
+            QPushButton {{
+                background-image: url({ruta_svg_plus});
+                background-repeat: no-repeat;
+                background-position: center;
+                margin: 1px;
+                border: 0.5px solid gray;
+                border-radius: 5px;
+                transition: background-color 0.3s ease;
+            }}
+            QPushButton:hover {{
+                background-color: lightgray;
+            }}
+        """)
+        self.button_add.setFixedSize(190, 140)
+        self.button_add.clicked.connect(self.agregar_cuadro_flujo)
         
-        # Añadir el QScrollArea y el layout al layout principal
-        self.areas_edit_w_welcome.addWidget(self.scroll_areas_w)
-        self.areas_edit_w_welcome.addLayout(self.list_config_welcome)
+        # Añadir el botón directamente al layout del scroll area
+        self.scroll_area_layout.addWidget(self.button_add, 0, 0)  # Añadir en la primera posición
+        self.scroll_area.setWidget(scroll_area_widget)
+        self.scroll_area.setWidgetResizable(True)
+        
+        # Añadir el scroll area al layout principal
+        self.main_layout_h.addWidget(self.scroll_area)
+        
+        # Cuadro de flujo
+        area2_widget = self.setup_area_flujo_widget()
+        main_qframe.addWidget(area2_widget)
+        main_qframe.addLayout(self.main_layout_h)
+        
+    def setup_area_flujo_widget(self):
+        area_principal = QWidget()
+        area = QVBoxLayout()
+        h1_area = QHBoxLayout()
+        label1 = QLabel("Nombre del flujo")
+        name = QLineEdit()
+        h1_area.addWidget(label1)
+        h1_area.addWidget(name)
+        h1_area.addStretch()
     
-        # Botones
-        self.button_layout_w = QHBoxLayout()
-        self.edit_save_button_w = QPushButton("Guardar Cambios")
-        self.button_layout_w.addWidget(self.edit_save_button_w)
-        self.cancelar_button_w = QPushButton("Cancelar")
-        self.cancelar_button_w.clicked.connect(self.cancelar)
-        self.button_layout_w.addWidget(self.cancelar_button_w)
-    
-        edit_layout_welcome.addLayout(self.areas_edit_w_welcome)
-        edit_layout_welcome.addLayout(self.button_layout_w)
-    
-        self.edit_layout_welcome.addWidget(self.edit_widget_welcome)
-    
-
-    def setup_conditions_area_triangle(self):
-        self.conditions_area_widget = QWidget()
-        edit_layout_conditions = QVBoxLayout()
-        self.conditions_area_widget.setLayout(edit_layout_conditions)
-    
-        # Áreas de configuración
-        areas_edit_condition = QVBoxLayout()
-        self.conditions_label = QLabel("Condiciones")
-        areas_edit_condition.addWidget(self.conditions_label)
-    
-        # Botón para añadir condiciones a la lista
-        self.add_condition_button = QPushButton("Añadir Condición")
-        self.add_condition_button.clicked.connect(self.condicion_widget)
-        areas_edit_condition.addWidget(self.add_condition_button)
-    
-        # Lista de condiciones
-        self.conditions_list = QVBoxLayout()
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_content = QWidget()
-        self.conditions_list.addStretch()  # Añadir el resorte al final
-        scroll_content.setLayout(self.conditions_list)
-    
-        scroll_area.setWidget(scroll_content)
-        areas_edit_condition.addWidget(scroll_area)
-    
-        # Agregar áreas de configuración al layout principal
-        edit_layout_conditions.addLayout(areas_edit_condition)
-    
-        # Botones
-        button_layout_conditions = QHBoxLayout()
-        self.edit_save_button_conditions = QPushButton("Guardar Cambios")
-        button_layout_conditions.addWidget(self.edit_save_button_conditions)
-        self.cancelar_button_conditions = QPushButton("Cancelar")
-        self.cancelar_button_conditions.clicked.connect(self.cancelar)
-        button_layout_conditions.addWidget(self.cancelar_button_conditions)
-    
-        # Agregar layout de botones al layout principal
-        edit_layout_conditions.addLayout(button_layout_conditions)
-    
-        # Agregar el widget de condiciones al layout principal de la interfaz
-        self.edit_layout_conditions.addWidget(self.conditions_area_widget)
-
-        # Añadir una condición por defecto
-        self.condicion_widget(deletable=False)
-
-    def condicion_widget(self, deletable=True):
-        # Línea 336 en structure_message_ui.py
-        ConditionWidget(self.conditions_list, action_names=[], condition_names=[], deletable=False)
-
-    def toggle_quick_response(self, state):
-        if state == Qt.Checked:
-            self.quick_response_name.setVisible(True)
-            self.edit_message_w.setVisible(False)
-            self.areas_edit_w.addStretch()
-            self.desplegador_w.setVisible(False)
-            self.desplegador_script_w.setVisible(False)
-        else:
-            self.quick_response_name.setVisible(False)
-            self.edit_message_w.setVisible(True)
-            self.areas_edit_w.takeAt(self.areas_edit_w.count() - 1)
-            self.desplegador_w.setVisible(True)
-            self.desplegador_script_w.setVisible(True)
-
-    def setup_edit_area(self):
-        self.edit_widget = QWidget()
-        edit_layout = QVBoxLayout()
-        self.edit_widget.setLayout(edit_layout)
-
-        self.edit_id_label = QLabel()
-        edit_layout.addWidget(self.edit_id_label)
-
-        self.edit_message = QTextEdit()
-        edit_layout.addWidget(self.edit_message)
-
-        self.edit_file_button = QPushButton("Subir Archivo")
-        edit_layout.addWidget(self.edit_file_button)
-
-        self.edit_save_button = QPushButton("Guardar Cambios")
-        edit_layout.addWidget(self.edit_save_button)
-
-        self.cancelar_button = QPushButton("Cancelar")
-        self.cancelar_button.clicked.connect(self.cancelar)
-        edit_layout.addWidget(self.cancelar_button)
-
-        self.edit_layout.addWidget(self.edit_widget)
-
-    def cancelar(self):
-        self.show_structure_area()
-
-    def setup_structure_area(self):
-        # Crear el widget principal y los layouts
-        self.structure_widget = QWidget()
-        self.button_layout = QHBoxLayout()
-        self.zoomable_layout = QVBoxLayout()
-
-        # Crear los botones y conectar señales
-        self.add_button = QPushButton("Agregar Widget")
-        self.add_button.clicked.connect(self.add_random_widget)
-        self.button_layout.addWidget(self.add_button)
-
-        self.delete_button = QPushButton("Eliminar Último")
-        self.button_layout.addWidget(self.delete_button)
-
-        self.save_button = QPushButton("Guardar")
-        self.button_layout.addWidget(self.save_button)
-
-        self.ocultar_button = QPushButton("Ocultar")
-        self.ocultar_button.clicked.connect(self.ocultar_areas)
-        self.button_layout.addWidget(self.ocultar_button)
-
+        h2_area = QHBoxLayout()
         # Crear y configurar la vista gráfica
-        self.scene = QGraphicsScene(0, 0, 10000, 10000)
+        self.scene = QGraphicsScene(0, 0, 7000, 7000)
         self.view = ZoomableGraphicsView(self.scene)
         self.view.setRenderHint(QPainter.Antialiasing)
         self.view.setScene(self.scene)
-        self.zoomable_layout.addWidget(self.view)
         self.view.setMouseTracking(True)
 
-        # Crear un layout principal que contenga el layout de botones y el layout de vista gráfica
-        self.main_layout = QVBoxLayout()
-        self.main_layout.addLayout(self.button_layout)
-        self.main_layout.addLayout(self.zoomable_layout)
+        h2_area.addWidget(self.view)
 
-        self.main_layout_h = QHBoxLayout()
-        #lista de botones de configuracion
-        self.list_config = QVBoxLayout()
-        self.list_config.addWidget(QLabel("Configuraciones"))
+        area.addLayout(h1_area)
+        area.addWidget(h2_area)
+    
+        area_principal.setLayout(area)
+        return area_principal
 
-        # Crear botón para agregar un triángulo a la lista de configuraciones
-        self.button_add_triangle = QPushButton("Condiciones 🔼")
-        self.button_add_triangle.clicked.connect(lambda: self.add_widget_movable(color="yellow", tipo="triangle"))
+    def agregar_cuadro_flujo(self):
+        # Crear el nuevo cuadro de flujo
+        numero = str(self.nombre_flujo)
+        cuadro = self.cuadro_de_flujo(nombre="Nombre del Flujo: " + numero)
+        self.nombre_flujo += 1
+        self.widget_count += 1
+    
+        # Añadir el nuevo cuadro al layout
+        self.scroll_area_layout.addWidget(cuadro)
+    
+        # Reorganizar los widgets
+        self.reorganizar_widgets()
+
+    def reorganizar_widgets(self):
+        # Ancho de cada widget y margen
+        ancho_widget = 190
+        margen = 1
+    
+        # Obtener el ancho del área de desplazamiento
+        ancho_scroll_area = self.scroll_area.width()
+    
+        # Calcular el número de columnas
+        num_columnas = ancho_scroll_area // (ancho_widget + margen)
+    
+        # Reorganizar los widgets en el layout
+        widgets = []
+        for i in range(self.scroll_area_layout.count()):
+            widget = self.scroll_area_layout.itemAt(i).widget()
+            if widget != self.button_add:
+                widgets.append(widget)
+    
+        # Limpiar el layout
+        while self.scroll_area_layout.count():
+            item = self.scroll_area_layout.takeAt(0)
+            if item.widget():
+                item.widget().setParent(None)
+    
+        # Añadir el botón de añadir en la primera posición
+        self.scroll_area_layout.addWidget(self.button_add, 0, 0)
+    
+        # Añadir los widgets de nuevo en el layout reorganizados
+        for i, widget in enumerate(widgets):
+            row = (i + 1) // num_columnas
+            col = (i + 1) % num_columnas
+            self.scroll_area_layout.addWidget(widget, row, col)
+
+    def cuadro_de_flujo(self, nombre="Nombre del Flujo", flujo=None):
+        # Nombre
+        nombre_label = QLabel(f"{nombre}")
         
-        self.button_add_scuare = QPushButton("Menu 📜")
-        self.button_add_scuare.clicked.connect(lambda: self.add_widget_movable(color="blue", tipo="square"))
-
-        # Crear botón para agregar una acción a la lista de configuraciones
-        self.button_add_action = QPushButton("Acciones ➡️")
-        # Esto añadirá al área zoomeable un widget rectángulo
-        self.button_add_action.clicked.connect(lambda: self.add_widget_movable(color="gray", tipo="rectangle"))
-
-        #añadir botones a la lista de configuraciones
-        self.list_config.addWidget(self.button_add_triangle)
-        self.list_config.addWidget(self.button_add_scuare)
-        self.list_config.addWidget(self.button_add_action)
-        self.list_config.addStretch()
+        # Cuadro de flujo
+        flujo_qframe = QFrame(self)
+        flujo_qframe.setObjectName("customQFrame")
+        flujo_qframe.setStyleSheet("""
+            QFrame#customQFrame {
+                border: 1px solid gray;
+                border-radius: 5px;
+                margin: 1px;
+            }
+        """)
         
-        # Crear un QWidget y establecer su layout
-        self.areas_edit = QWidget()
-        self.areas_edit.setLayout(self.list_config)
+        flujo_layout = QVBoxLayout()
+        
+        horizontal = QHBoxLayout()
+        horizontal.addWidget(nombre_label)
+        horizontal.addStretch()
+        flujo_layout.addLayout(horizontal)
 
-        self.main_layout_h.addLayout(self.main_layout)
-        self.main_layout_h.addWidget(self.areas_edit)
+        #portada de el flujo
+        label = QLabel()
+        label.setMaximumSize(190, 170)
+        label.setAlignment(Qt.AlignCenter)
 
-        # Establecer el layout principal en el widget principal
-        self.structure_widget.setLayout(self.main_layout_h)
-
-        # Añadir el widget principal al layout general
-        self.structure_layout.addWidget(self.structure_widget)
-
-
-
-    def add_random_widget(self):
-        color = self.generate_random_color()
-        self.add_widget_movable(color)
-
-    def generate_random_color(self):
-        return f"#{random.randint(0, 0xFFFFFF):06x}"
+        flujo_layout.addWidget(label)
+        flujo_qframe.setLayout(flujo_layout)
+        
+        # Tamaño del cuadro de flujo
+        flujo_qframe.setFixedSize(190, 140)
+        
+        return flujo_qframe
     
-    def connect_widgets(self, widget1, widget2):
-        if widget2 not in widget1.connected_widgets:
-            side1, side2 = self.determine_connection_sides(widget1, widget2)
-            point1 = widget1.add_connection_point(side1)
-            point2 = widget2.add_connection_point(side2)
-            
-            if point1 and point2:
-                self.create_l_shaped_connection(point1, point2)
-                widget1.connected_widgets.add(widget2)
-                widget2.connected_widgets.add(widget1)
-                # Actualizar conexiones
-                widget1.connections.append(f'Connected to widget {widget2.widget_id}')
-                widget2.connections.append(f'Connected to widget {widget1.widget_id}')
-                print(f"Connected widget {widget1.widget_id} to widget {widget2.widget_id}")
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        
+        # Cancelar cualquier temporizador existente
+        if hasattr(self, 'resize_timer'):
+            self.resize_timer.stop()
+        
+        # Crear un nuevo temporizador
+        self.resize_timer = QTimer()
+        self.resize_timer.setSingleShot(True)
+        self.resize_timer.timeout.connect(self.reorganizar_widgets)
+        
+        # Iniciar el temporizador con un retraso de 200 ms
+        self.resize_timer.start(100)
 
-    def determine_connection_sides(self, widget1, widget2):
-        dx = widget2.scenePos().x() - widget1.scenePos().x()
-        dy = widget2.scenePos().y() - widget1.scenePos().y()
+    def get_executable_dir(self):
+        return os.path.dirname(os.path.abspath(__file__))
 
-        if abs(dx) > abs(dy):
-            return ('right', 'left') if dx > 0 else ('left', 'right')
-        else:
-            return ('bottom', 'top') if dy > 0 else ('top', 'bottom')
-
-    def create_l_shaped_connection(self, point1, point2):
-        path = QPainterPath()
-        start = point1.scenePos()
-        end = point2.scenePos()
-        path.moveTo(start)
-
-        if point1.side in ['left', 'right']:
-            mid_x = (start.x() + end.x()) / 2
-            path.lineTo(mid_x, start.y())
-            path.lineTo(mid_x, end.y())
-        else:
-            mid_y = (start.y() + end.y()) / 2
-            path.lineTo(start.x(), mid_y)
-            path.lineTo(end.x(), mid_y)
-
-        path.lineTo(end)
-
-        line = QGraphicsPathItem(path)
-        line.setPen(QPen(Qt.black, 2))
-        self.scene.addItem(line)
-        self.connections.append((point1, point2, line))
-
-    def update_connections(self):
-        connections_to_remove = []
-        for point1, point2, line in self.connections:
-            widget1 = point1.parentItem()
-            widget2 = point2.parentItem()
-            
-            # If either widget has been deleted, mark the connection for removal
-            if widget1 is None or widget2 is None:
-                connections_to_remove.append((point1, point2, line))
-                continue
-            
-            # Determine the new sides for the connection
-            new_side1, new_side2 = self.determine_connection_sides(widget1, widget2)
-            
-            # Change sides if necessary
-            if point1.side != new_side1 or point2.side != new_side2:
-                widget1.connection_points[point1.side].remove(point1)
-                widget2.connection_points[point2.side].remove(point2)
-                point1.side = new_side1
-                point2.side = new_side2
-                widget1.connection_points[new_side1].append(point1)
-                widget2.connection_points[new_side2].append(point2)
-            
-            # Update the positions of the connection points
-            widget1.update_connection_point_position(new_side1)
-            widget2.update_connection_point_position(new_side2)
-            
-            # Update the L-shaped connection path
-            path = QPainterPath()
-            start = point1.scenePos()
-            end = point2.scenePos()
-            path.moveTo(start)
-
-            if new_side1 in ['left', 'right']:
-                mid_x = (start.x() + end.x()) / 2
-                path.lineTo(mid_x, start.y())
-                path.lineTo(mid_x, end.y())
-            else:
-                mid_y = (start.y() + end.y()) / 2
-                path.lineTo(start.x(), mid_y)
-                path.lineTo(end.x(), mid_y)
-
-            path.lineTo(end)
-            line.setPath(path)
-
-        # Remove any connections where one of the widgets has been deleted
-        for connection in connections_to_remove:
-            self.connections.remove(connection)
-
-    def add_widget_movable(self, color, widget_id=0, tipo="rectangle"):
-        if widget_id is None:
-            widget = MovableWidget(self, color, None, tipo="pentagon")
-        else:
-            widget_id = self.next_widget_id
-            self.next_widget_id += 1
-            widget = MovableWidget(self, color, widget_id, tipo)
-    
-        # Calculamos el tamaño real del widget
-        widget.setPos(0, 0)  # Posición temporal para calcular el tamaño
-        widget_rect = widget.boundingRect()
-        widget_width = widget_rect.width()
-        widget_height = widget_rect.height()
-        spacing = 50
-    
-        # Obtenemos el tamaño visible de la escena
-        scene_rect = self.scene.sceneRect()
-    
-        # Inicializamos la posición de inicio
-        start_x = scene_rect.left() + spacing
-        start_y = scene_rect.top() + spacing
-    
-        # Buscamos una posición libre
-        position_found = False
-        while not position_found:
-            new_pos = QPointF(start_x, start_y)
-            collision = False
-    
-            # Verificamos si hay colisión con algún widget existente
-            for existing_widget in self.widgets:
-                if existing_widget.sceneBoundingRect().intersects(QRectF(new_pos, QSizeF(widget_width, widget_height))):
-                    collision = True
-                    break
-    
-            if not collision:
-                position_found = True
-            else:
-                # Movemos la posición a la derecha
-                start_x += widget_width + spacing
-                
-                # Si llegamos al borde derecho, pasamos a la siguiente fila
-                if start_x > scene_rect.right() - widget_width - spacing:
-                    start_x = scene_rect.left() + spacing
-                    start_y += widget_height + spacing
-    
-            # Si llegamos al borde inferior, reajustamos la escena
-            if start_y > scene_rect.bottom() - widget_height - spacing:
-                new_height = scene_rect.height() + widget_height + spacing
-                self.scene.setSceneRect(self.scene.sceneRect().united(
-                    QRectF(scene_rect.left(), scene_rect.top(), scene_rect.width(), new_height)
-                ))
-                scene_rect = self.scene.sceneRect()
-    
-        # Desplazar la posición un 20% más lejos
-        new_pos.setX(new_pos.x() + widget_width * 0.2)
-        new_pos.setY(new_pos.y() + widget_height * 0.2)
-    
-        # Ajustar la posición si se sale de los límites de la escena
-        if new_pos.x() + widget_width > scene_rect.right():
-            new_pos.setX(scene_rect.right() - widget_width)
-        if new_pos.y() + widget_height > scene_rect.bottom():
-            new_pos.setY(scene_rect.bottom() - widget_height)
-    
-        widget.setPos(new_pos)
-        self.scene.addItem(widget)
-        self.widgets.append(widget)
-    
-        # Aseguramos que el widget sea visible en la escena
-        self.view.ensureVisible(widget.sceneBoundingRect(), 50, 50)
-    
-        return widget
-
-    def start_connecting(self, widget):
-        self.connecting_widget = widget
-        self.view.setCursor(Qt.CrossCursor)
-    
-    # eliminará la conexión entre 2 widgets, es decir, el widget objetivo y el widget que dispara la desconexión
-    def remove_connection(self, widget1, widget2):
-        connections_to_remove = []
-        for connection in self.connections:
-            point1, point2, line = connection
-            if (point1.parentItem() == widget1 and point2.parentItem() == widget2) or \
-            (point1.parentItem() == widget2 and point2.parentItem() == widget1):
-                self.scene.removeItem(line)
-                connections_to_remove.append(connection)
-                # Eliminar los puntos de conexión
-                widget1.remove_connection_points(point1)
-                widget2.remove_connection_points(point2)
-
-        for connection in connections_to_remove:
-            self.connections.remove(connection)
-
-        # Actualizar las listas de widgets conectados
-        widget1.connected_widgets.remove(widget2)
-        widget2.connected_widgets.remove(widget1)
-
-        # Actualizar las conexiones en los widgets
-        widget1.connections = [conn for conn in widget1.connections if f"widget {widget2.widget_id}" not in conn]
-        widget2.connections = [conn for conn in widget2.connections if f"widget {widget1.widget_id}" not in conn]
-
-        print(f"Removed connection between widget {widget1.widget_id} and widget {widget2.widget_id}")
-
-    def delete_widget(self, widget):
-        if widget in self.widgets:
-            self.widgets.remove(widget)
-    
-        connections_to_remove = []
-        for connection in self.connections:
-            point1, point2, line = connection
-            if point1.parentItem() == widget or point2.parentItem() == widget:
-                self.scene.removeItem(line)
-                connections_to_remove.append(connection)
-                # Eliminar el punto de conexión del otro widget
-                if point1.parentItem() == widget:
-                    other_widget = point2.parentItem()
-                    other_widget.remove_connection_points(point2)
-                else:
-                    other_widget = point1.parentItem()
-                    other_widget.remove_connection_points(point1)
-    
-        for connection in connections_to_remove:
-            self.connections.remove(connection)
-    
-        widget.remove_connection_points()
-    
-        self.scene.removeItem(widget)
-    
 
 def container_estructure(MainUI):
     return StructureUI(MainUI)
+
+import re
+
+class ChatBot:
+    def __init__(self):
+        self.conditions_responses = []
+
+    def format_condition(self, condition):
+        # Reemplazar los formatos %palabra%, palabra%, %palabra
+        condition = condition.replace('%', ' in mensaje.lower() ')
+        condition = condition.replace(' ', '')
+        # Convertir a evaluable en Python
+        condition = condition.replace('or', ' or ')
+        condition = condition.replace('and', ' and ')
+        condition = condition.replace('not', ' not ')
+        return condition
+
+    def evaluate_condition(self, mensaje, condition, condition_type):
+        try:
+            result = eval(condition)
+            if condition_type == 'obligatorio':
+                return result
+            elif condition_type == 'opcional':
+                # Si la condición es opcional, no es necesario que sea verdadera, solo que no sea prohibida
+                return result
+            elif condition_type == 'prohibido':
+                return not result
+        except Exception as e:
+            print(f"Error evaluando la condición: {e}")
+            return False
+
+    def responder(self, mensaje):
+        for conditions, response, condition_type in self.conditions_responses:
+            if all(self.evaluate_condition(mensaje, cond, cond_type) for cond, cond_type in conditions):
+                return response
+        return "No entiendo el mensaje."
+
+    def add_conditions(self):
+        while True:
+            print("Introduce las condiciones para la nueva respuesta. Añade una condición por línea:")
+            conditions = []
+            while True:
+                print("Introduce una condición (por ejemplo, '%hola%:obligatorio' o 'palabra%:opcional'), o escribe 'hecho' cuando termines:")
+                input_condition = input()
+                if input_condition.lower() == 'hecho':
+                    break
+                if ':' not in input_condition:
+                    print("Formato inválido. Debes especificar el tipo de condición.")
+                    continue
+                
+                condition, condition_type = input_condition.split(':', 1)
+                formatted_condition = self.format_condition(condition.strip())
+                conditions.append((formatted_condition, condition_type.strip()))
+
+            print("Introduce la respuesta para estas condiciones:")
+            response = input()
+            self.conditions_responses.append((conditions, response.strip()))
+
+            print("¿Quieres añadir más condiciones? (s/n): ")
+            if input().lower() == 'n':
+                break
+
+# Menú principal
+def main():
+    chatbot = ChatBot()
+    
+    while True:
+        print("¿Quieres añadir condiciones al chatbot? (s/n): ")
+        if input().lower() == 's':
+            chatbot.add_conditions()
+        
+        print("¿Quieres probar el chatbot? (s/n): ")
+        if input().lower() == 's':
+            while True:
+                print("Introduce un mensaje para probar:")
+                mensaje = input()
+                print(chatbot.responder(mensaje))
+                print("¿Quieres probar otro mensaje? (s/n): ")
+                if input().lower() == 'n':
+                    break
+        
+        print("¿Quieres continuar añadiendo más condiciones? (s/n): ")
+        if input().lower() == 'n':
+            print("Saliendo...")
+            break
+
+if __name__ == "__main__":
+    main()

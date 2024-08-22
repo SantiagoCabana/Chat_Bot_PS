@@ -1,47 +1,68 @@
-#selenium_controller.py
+import os, sys,cv2, numpy as np
+import socket
+import hashlib
+import asyncio
+from PyQt5.QtCore import QRunnable, pyqtSignal, pyqtSlot, QObject, QTimer
+from PyQt5.QtGui import QImage
 from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.common.keys import Keys
 from selenium.webdriver.common.action_chains import ActionChains
 from selenium.common.exceptions import NoSuchElementException
-from PyQt5.QtCore import QThreadPool, pyqtSignal, pyqtSlot,QRunnable,QTimer,QObject
+import threading
 import xml.etree.ElementTree as ET
 from datetime import datetime
-import os, socket, asyncio
-import json
-import hashlib
-import time
-import uuid
-
+import time, pickle
 from googleapiclient.discovery import build
-from google.oauth2.credentials import Credentials
-import os
 
-class SeleniumController(QRunnable):
+
+def get_available_port(start_port):
+    port = start_port
+    while True:
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            if s.connect_ex(('localhost', port)) != 0:
+                return port
+            port += 1
+
+class SeleniumWorker(QRunnable):
+    class Signals(QObject):
+        finished = pyqtSignal()
+        error = pyqtSignal(str)
+        result = pyqtSignal(str)
+        frame_ready = pyqtSignal(bytes)
+
     def __init__(self, nombre_script):
-        if not isinstance(nombre_script, str):
-            raise ValueError("El nombre del script debe ser una cadena")
-        
-        self.ruta_xml = 'DATA/resource/xml/'
-        self.ruta_json = 'DATA/resource/json/'
-        self.nombre_script = nombre_script
-        self.puerto = self.convertir_nombre_a_puerto(nombre_script)
+        super().__init__()
+        self.nombre_script = str(nombre_script)
+        self.signals = self.Signals()
+        self.stop_thread = threading.Event()
         self.driver = None
         self.running = False
+        self.ruta_xml = 'DATA/resource/xml/'
+        self.ruta_json = 'DATA/resource/json/'
+        self.puerto = self.convertir_nombre_a_puerto(nombre_script)
         self.interval_id = None
-
-        self.server = None
-
         self.lista_chats = []
-        
         self.lista_xpath = None
+        self.capture_timer = None
+        self.use_gui = False
         self.mensajes_list = "//div[@class='x3psx0u xwib8y2 xkhd6sd xrmvbpv']"
-
         self.crear_archivos()
 
     @pyqtSlot()
+    def run(self):
+        try:
+            self.running = True
+            self.iniciar()
+            while self.running:
+                self.accion()
+                asyncio.run(asyncio.sleep(1 / 30))  # 30 FPS
+        except Exception as e:
+            self.signals.error.emit(str(e))
+
     def iniciar(self):
         try:
             self.user_data_directory = os.path.join(self.get_executable_dir(), 'DATA', 'SCRIPTS', f'{self.nombre_script}')
@@ -49,8 +70,10 @@ class SeleniumController(QRunnable):
                 os.makedirs(self.user_data_directory)
 
             options = webdriver.ChromeOptions()
+            if not self.use_gui:
+                options.add_argument("--headless")
             options.add_argument(f"user-data-dir={self.user_data_directory}")
-            options.add_argument("--disable-extensQions")
+            options.add_argument("--disable-extensions")
             options.add_argument("--disable-background-timer-throttling")
             options.add_argument("--disable-backgrounding-occluded-windows")
             options.add_argument("--disable-renderer-backgrounding")
@@ -62,53 +85,74 @@ class SeleniumController(QRunnable):
             options.add_argument("--disable-notifications")
             options.add_experimental_option("excludeSwitches", ["enable-automation"])
             options.add_experimental_option('useAutomationExtension', False)
-
             options.add_argument("--lang=es")
             options.add_argument(f"--remote-debugging-port={self.puerto}")
 
             self.driver = webdriver.Chrome(options=options)
-            
             self.driver.get('https://web.whatsapp.com/')
-            self.running = True
+
+            # Iniciar la captura de pantalla
+            self.capture_timer = QTimer()
+            self.capture_timer.timeout.connect(self.capture_screen)
+            self.capture_timer.start(40)  # 25 FPS (1000ms / 25 = 40ms)
+
+            self.signals.result.emit(f"WhatsApp Web iniciado para {self.nombre_script}")
 
         except Exception as e:
-            self.running = False
-            print(f"Error: {e}")
-        #inciar la funcon de accion
-        self.accion()
+            self.signals.error.emit(f"Error al iniciar: {str(e)}")
+
+    def capture_screen(self):
+        if self.driver:
+            # Capturar la pantalla
+            screenshot = self.driver.get_screenshot_as_png()
+            nparr = np.frombuffer(screenshot, np.uint8)
+            img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
+            
+            # Convertir la imagen a formato QImage
+            height, width, channel = img.shape
+            bytes_per_line = 3 * width
+            q_img = QImage(img.data, width, height, bytes_per_line, QImage.Format_RGB888)
+            
+            # Emitir la señal con la imagen capturada
+            self.signals.frame_ready.emit(q_img)
+
+    def set_use_gui(self, use_gui):
+        self.use_gui = use_gui
 
     def accion(self):
         try:
-            #esperar carga de mensajes
             self.esperar_carga_mensajes()
-
-            #desselecionar filtro
             self.deselect_filtro()
             time.sleep(5)
             self.selecionar_filtro("no_agendado")
             time.sleep(0.5)
             self.ordenar_chats()
             time.sleep(0.5)
-            print("Buscando chat no leido")
-            #identificar chats no leidos
+            self.signals.result.emit("Buscando chat no leído")
             self.selecionar_chat()
-            time.sleep(5000)
-            #detectar nuevos mensajes:
+            time.sleep(5)
             self.leer_mensaje()
-            #precionar esc para cerrar el chat
             accion = ActionChains(self.driver)
             accion.send_keys(Keys.ESCAPE).perform()
             time.sleep(5)
         except Exception as e:
-            print(f"Error en la función accion: {e}")
+            self.signals.error.emit(f"Error en la función acción: {str(e)}")
 
-    def detener(self):
+    def detect_stop(self):
+        while not self.stop_thread.is_set():
+            if not self.running:
+                self.signals.result.emit("Se detectó la detención del script. Deteniendo...")
+                self.stop()
+                break
+            time.sleep(0.1)  # Revisar cada 100 ms
+
+    def stop(self):
+        self.running = False
+        self.stop_thread.set()
         if self.driver:
+            self.signals.result.emit(f"Deteniendo instancia {self.nombre_script}")
             self.driver.quit()
-            self.running = False
-
-    def conversando(self,data):
-        pass
+        self.signals.finished.emit()
 
     #-----------------------------------Funciones Test-----------------------------------
     def extraer_html_de_chat(self):
@@ -385,12 +429,14 @@ class SeleniumController(QRunnable):
     def mensaje_bienvenida(self):
         pass
 
+    
     def agendar_contacto_api_contacts_google(self, id, numero):
         nombre = f'{self.nombre_script}_{id}'
         
         # Cargar el token de inicio de sesión
-        token_path = os.path.join(self.get_executable_dir(),'DATA', 'tokens', 'contacts_token.json')
-        creds = Credentials.from_authorized_user_file(token_path, ['https://www.googleapis.com/auth/contacts'])
+        token_path = os.path.join(self.get_executable_dir(), 'DATA', 'tokens', 'pickle', 'token.pickle')
+        with open(token_path, 'rb') as token:
+            creds = pickle.load(token)
         
         # Crear el servicio de la API
         service = build('people', 'v1', credentials=creds)
@@ -689,5 +735,5 @@ class SeleniumController(QRunnable):
 
 # Ejemplo de uso
 if __name__ == "__main__":
-    controller = SeleniumController("DATA1")
-    controller.iniciar()
+    worker = SeleniumWorker("DATA1")
+    worker.run()

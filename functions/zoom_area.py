@@ -29,9 +29,9 @@ class ZoomableGraphicsView(QGraphicsView):
         painter.drawLines(lines)
 
     def wheelEvent(self, event: QWheelEvent):
-        zoom_factor = 2.0
-        max_zoom = 0.8  
-        min_zoom = 0.3
+        zoom_factor = 1.5
+        max_zoom = 1.0  
+        min_zoom = 0.15  
     
         current_transform = self.transform()
         current_scale = current_transform.m11()

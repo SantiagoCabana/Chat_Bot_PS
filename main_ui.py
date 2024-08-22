@@ -94,7 +94,7 @@ class MainWindow(QMainWindow):
         self.crear_token_api_contacts()
 
     def initUI(self):
-        anchofijo = 120
+        anchofijo = 115
         altura = 80
         # Crear botones personalizados con imagen y texto
         self.home = IconButton("Inicio", "resource/svg/home.svg", self)

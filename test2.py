@@ -91,6 +91,7 @@ class SeleniumWorker(QRunnable):
     def get_executable_dir(self):
         return os.path.dirname(os.path.abspath(__file__))
 
+#test2.py
 class StopWorker(QRunnable):
     def __init__(self, worker):
         super().__init__()
