@@ -62,42 +62,41 @@ class SeleniumWorker(QRunnable):
             self.iniciar()
             while not self.stop_thread.is_set():
                 self.load_user_data()  # Recargar datos para verificar el estado actual
-                if not self.user_data[self.nombre_script]["running"]:
-                    self.stop_running()
+                if self.nombre_script not in self.user_data or not self.user_data[self.nombre_script]["running"]:
+                    self.stop()
                     break
                 self.accion()
                 asyncio.run(asyncio.sleep(0.1))  # Dormir por 100ms para evitar uso excesivo de CPU
         except Exception as e:
             self.signals.error.emit(str(e))
         finally:
-            self.stop_running()
+            self.stop()
             self.signals.finished.emit()
+
+    @pyqtSlot()
+    def stop_script(self):
+        self.user_data[self.nombre_script]["running"] = False
+        self.save_user_data()
+        self.stop_thread.set()
+        if self.driver:
+            self.signals.result.emit(f"Deteniendo instancia {self.nombre_script}")
+            self.driver.quit()
+        self.signals.finished.emit()
 
     def load_user_data(self):
         if os.path.exists(self.user_data_file):
             with open(self.user_data_file, 'r') as f:
                 user_data = json.load(f)
                 if self.nombre_script in user_data:
-                    self.user_data[self.nombre_script]["running"] = user_data[self.nombre_script].get("running", False)
+                    self.user_data = user_data
                 else:
-                    self.user_data[self.nombre_script] = {"running": False}
+                    self.user_data = {self.nombre_script: {"running": False}}
         else:
             self.user_data = {self.nombre_script: {"running": False}}
 
     def save_user_data(self):
         with open(self.user_data_file, 'w') as f:
             json.dump(self.user_data, f, indent=4)
-
-    def start_running(self):
-        self.user_data[self.nombre_script]["running"] = True
-        self.save_user_data()
-        self.stop_thread.clear()
-        # Aquí iniciarías el hilo o proceso que ejecuta el script
-
-    def stop_running(self):
-        self.user_data[self.nombre_script]["running"] = False
-        self.save_user_data()
-        self.stop_thread.set()
 
     def iniciar(self):
         try:
@@ -176,6 +175,11 @@ class SeleniumWorker(QRunnable):
         except Exception as e:
             self.signals.error.emit(f"Error en la función acción: {str(e)}")
 
+    def stop_running(self):
+        self.user_data[self.nombre_script]["running"] = False
+        self.save_user_data()
+        self.stop_thread.set()
+        
     def detect_stop(self):
         while not self.stop_thread.is_set():
             if not self.running:
