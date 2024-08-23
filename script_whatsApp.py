@@ -1,4 +1,4 @@
-import os, sys,cv2, numpy as np
+import os, sys,cv2,json, numpy as np
 import socket
 import hashlib
 import asyncio
@@ -32,7 +32,7 @@ class SeleniumWorker(QRunnable):
         finished = pyqtSignal()
         error = pyqtSignal(str)
         result = pyqtSignal(str)
-        frame_ready = pyqtSignal(bytes)
+        frame_ready = pyqtSignal(QImage)  # Cambiado a QImage
 
     def __init__(self, nombre_script):
         super().__init__()
@@ -41,8 +41,11 @@ class SeleniumWorker(QRunnable):
         self.stop_thread = threading.Event()
         self.driver = None
         self.running = False
-        self.ruta_xml = 'DATA/resource/xml/'
-        self.ruta_json = 'DATA/resource/json/'
+        self.ruta_xml = os.path.join(self.get_executable_dir(),'DATA', 'resource','xml')
+        self.ruta_json = os.path.join(self.get_executable_dir(),'DATA', 'resource', 'json')
+        self.user_data_file = os.path.join(self.get_executable_dir(),'DATA', 'resource', 'json', 'Z_USERS_DATA.json')
+        self.user_data_directory = None
+        self.user_data = None
         self.puerto = self.convertir_nombre_a_puerto(nombre_script)
         self.interval_id = None
         self.lista_chats = []
@@ -50,24 +53,59 @@ class SeleniumWorker(QRunnable):
         self.capture_timer = None
         self.use_gui = False
         self.mensajes_list = "//div[@class='x3psx0u xwib8y2 xkhd6sd xrmvbpv']"
+        self.load_user_data()
         self.crear_archivos()
 
     @pyqtSlot()
     def run(self):
         try:
-            self.running = True
             self.iniciar()
-            while self.running:
+            while not self.stop_thread.is_set():
+                self.load_user_data()  # Recargar datos para verificar el estado actual
+                if not self.user_data[self.nombre_script]["running"]:
+                    self.stop_running()
+                    break
                 self.accion()
-                asyncio.run(asyncio.sleep(1 / 30))  # 30 FPS
+                asyncio.run(asyncio.sleep(0.1))  # Dormir por 100ms para evitar uso excesivo de CPU
         except Exception as e:
             self.signals.error.emit(str(e))
+        finally:
+            self.stop_running()
+            self.signals.finished.emit()
+
+    def load_user_data(self):
+        if os.path.exists(self.user_data_file):
+            with open(self.user_data_file, 'r') as f:
+                user_data = json.load(f)
+                if self.nombre_script in user_data:
+                    self.user_data[self.nombre_script]["running"] = user_data[self.nombre_script].get("running", False)
+                else:
+                    self.user_data[self.nombre_script] = {"running": False}
+        else:
+            self.user_data = {self.nombre_script: {"running": False}}
+
+    def save_user_data(self):
+        with open(self.user_data_file, 'w') as f:
+            json.dump(self.user_data, f, indent=4)
+
+    def start_running(self):
+        self.user_data[self.nombre_script]["running"] = True
+        self.save_user_data()
+        self.stop_thread.clear()
+        # Aquí iniciarías el hilo o proceso que ejecuta el script
+
+    def stop_running(self):
+        self.user_data[self.nombre_script]["running"] = False
+        self.save_user_data()
+        self.stop_thread.set()
 
     def iniciar(self):
         try:
             self.user_data_directory = os.path.join(self.get_executable_dir(), 'DATA', 'SCRIPTS', f'{self.nombre_script}')
+            print(f"Nombre del script: {self.nombre_script}")  # Depuración
             if not os.path.exists(self.user_data_directory):
                 os.makedirs(self.user_data_directory)
+            print(f"{self.user_data_directory} creado")
 
             options = webdriver.ChromeOptions()
             if not self.use_gui:
@@ -122,9 +160,9 @@ class SeleniumWorker(QRunnable):
     def accion(self):
         try:
             self.esperar_carga_mensajes()
-            self.deselect_filtro()
+            print("Buscando chat no leído")
             time.sleep(5)
-            self.selecionar_filtro("no_agendado")
+            self.selecionar_filtro("no_leidos")
             time.sleep(0.5)
             self.ordenar_chats()
             time.sleep(0.5)
@@ -177,35 +215,31 @@ class SeleniumWorker(QRunnable):
                 with open(filename, 'w', encoding='utf-8') as file:
                     file.write("")
     
-    #funcion para selecionar el filtro de busqueda de chats
-    def selecionar_filtro(self,tipo):
-        #selecionar el filtro de busqueda de chats
-        self.boton_filtro()
-        #habir el filtro de busqueda si esta desactivado osea q tenga el aria_pressed = false .. //button[@data-tab='4' and @aria-label='Menú de filtros de chats' and @aria-pressed='false']
+    # función para seleccionar el filtro de búsqueda de chats
+    def selecionar_filtro(self, tipo):
+        # Abrir el filtro de búsqueda si está desactivado (aria-pressed='false')
         if tipo == "no_leidos":
-            #selecionar chats no leidos
-            filtro_xpath = "//ul[@class='_ak5b']//li[div/div/span[@data-icon='search-unread']]"
-            self.lista_xpath = "//div[@aria-label='Lista de chats' and @role='grid']"
+            # seleccionar chats no leídos
+            filtro_xpath = "//button[@data-tab='4' and .//div[text()='No leídos']]"
         elif tipo == "contactos":
-            #selecionar contactos
-            filtro_xpath = "//ul[@class='_ak5b']//li[div/div/span[@data-icon='contacts']]"
-        elif tipo == "no_agendado":
-            #selecionar no agendados
-            filtro_xpath = "//ul[@class='_ak5b']//li[div/div/span[@data-icon='non-contacts']]"
-            self.lista_xpath = "//div[@aria-label='Resultados de la búsqueda.' and @role='grid']"
+            # seleccionar contactos
+            filtro_xpath = "//button[@data-tab='4' and .//div[text()='Contactos']]"
         elif tipo == "grupos":
-            #selecionar grupos
-            filtro_xpath = "//ul[@class='_ak5b']//li[div/div/span[@data-icon='group']]"
+            # seleccionar grupos
+            filtro_xpath = "//button[@data-tab='4' and .//div[text()='Grupos']]"
+        elif tipo == "etiquetas":
+            # seleccionar etiquetas
+            filtro_xpath = "//button[@data-tab='4' and .//div[text()='Etiquetas']]"
         else:
             print("Tipo de filtro no reconocido")
             return
-
-        #esperar a que el filtro este presente
+        
+        # Intentar encontrar el filtro y hacer clic en él
         try:
             filtro = self.driver.find_element(By.XPATH, filtro_xpath)
             filtro.click()
         except NoSuchElementException:
-            print("No se pudo encontrar el filtro espedificado")
+            print("No se pudo encontrar el filtro especificado")
 
     def boton_filtro(self):
         #selecionar el boton de filtro de busqueda de chats pero verificar si esta activado o desactivado
@@ -388,8 +422,6 @@ class SeleniumWorker(QRunnable):
         print("Lista de chats presente")
 
         self.remover_orden_chats()
-        #selecionar un chat sin nombre y si no hay sin nombre se selecionara el que tiene nombre
-
         # Intentar encontrar todos los chats no leídos sin nombre
         chats_no_leidos = self.driver.find_elements(By.XPATH, chat_sin_nombre_xpath_no_tag)
 
@@ -718,10 +750,14 @@ class SeleniumWorker(QRunnable):
                     pass
         #identicar grupos leidos y sin leer (leidos:"//div[@class='_ak8q']/span[contains(@class, 'x1iyjqo2') and not(starts-with(text(), '+'))]") no leidos
     
-#-----------------------------------Funciones auxiliares-----------------------------------
+
+    #-----------------------------------Funciones auxiliares-----------------------------------
 
     def get_executable_dir(self):
-        return os.path.dirname(os.path.abspath(__file__))
+        if getattr(sys, 'frozen', False):
+            return os.path.dirname(sys.executable)
+        else:
+            return os.path.dirname(os.path.abspath(__file__))
     
     def puerto_disponible(self, puerto):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
