@@ -6,8 +6,10 @@ from PyQt5.QtWidgets import (
 from PyQt5.QtGui import QIcon, QPixmap, QImage
 from PyQt5.QtCore import Qt, QSize
 from functions.icon_button import IconButton
+from google.auth.exceptions import RefreshError
 from google_authenticate import google_authenticate, get_user_info
 from area_script_run import retornar_area_script_run
+from area_structure_message import retornar_area_structure_message
 from area_historial_chat import retornar_area_historial_chat
 
 class LoginWindow(QWidget):
@@ -16,84 +18,27 @@ class LoginWindow(QWidget):
         self.crear_carpetas()
         self.descargar_xpath()
         self.init_ui()
-        self.check_existing_credentials()
 
     def init_ui(self):
         self.main_layout = QVBoxLayout()
 
         self.create_content_areas()
-        self.create_login_widget()
         self.create_menu_widget()
 
-        self.main_layout.addWidget(self.login_widget)
         self.main_layout.addWidget(self.menu_widget)
 
         self.setLayout(self.main_layout)
-        self.setWindowTitle("Inicio de Sesión")
+        self.setWindowTitle("Ventana Principal")
         self.setMinimumHeight(500)
         self.setMinimumWidth(1100)
 
-        self.menu_widget.hide()
         self.mostrar_home_area()
 
     def create_content_areas(self):
         self.home_area = QWidget()
         self.script_manager_area = retornar_area_script_run()
-        self.structure_message_area = QWidget()
+        self.structure_message_area = retornar_area_structure_message()
         self.historial_chat_area = retornar_area_historial_chat()
-
-    def create_login_widget(self):
-        self.login_widget = QWidget()
-        login_layout = QHBoxLayout()
-
-        self.frame = QFrame()
-        self.frame.setFrameShape(QFrame.Box)
-        self.frame.setFrameShadow(QFrame.Raised)
-        self.frame.setLineWidth(2)
-        self.frame_layout = QVBoxLayout(self.frame)
-
-        background_url = "https://svgtrace-upload-results-bucket.s3.amazonaws.com/2024-08-19/windows_c988e48c-d50d-4716-97e6-c20130cc414b_1724057753252.svg"
-        background_data = requests.get(background_url).content
-        background_image = QPixmap()
-        background_image.loadFromData(background_data)
-
-        frame_size = self.frame.size()
-        new_width = int(frame_size.width() * 1)
-        new_height = int(frame_size.height() * 1)
-        background_image = background_image.scaled(new_width, new_height, Qt.KeepAspectRatio)
-
-        background_label = QLabel()
-        background_label.setPixmap(background_image)
-
-        hbox_layout = QHBoxLayout()
-        hbox_layout.addStretch()
-        hbox_layout.addWidget(background_label)
-        hbox_layout.addStretch()
-
-        self.frame_layout.addLayout(hbox_layout)
-
-        vbox_layout = QVBoxLayout()
-
-        title = QLabel("Inicio de Sesión de Google")
-        title.setAlignment(Qt.AlignCenter)
-
-        google_login_button = QPushButton("Iniciar Sesión con Google")
-        google_icon_url = "https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg"
-        google_icon_data = requests.get(google_icon_url).content
-        google_icon = QIcon(QPixmap.fromImage(QImage.fromData(google_icon_data)))
-        google_login_button.setIcon(google_icon)
-        google_login_button.setIconSize(QSize(24, 24))
-        google_login_button.clicked.connect(self.login_with_google)
-
-        vbox_layout.addWidget(title)
-        vbox_layout.addStretch()
-        vbox_layout.addWidget(google_login_button)
-        vbox_layout.addStretch()
-
-        login_layout.addWidget(self.frame)
-        login_layout.addLayout(vbox_layout)
-
-        self.login_widget.setLayout(login_layout)
 
     def create_menu_widget(self):
         self.menu_widget = QWidget()
@@ -153,14 +98,6 @@ class LoginWindow(QWidget):
         menu_layout.addWidget(content_frame)
         
         self.menu_widget.setLayout(menu_layout)
-
-    def show_menu_window(self):
-        self.login_widget.hide()
-        self.menu_widget.show()
-
-    def hide_menu_window(self):
-        self.menu_widget.hide()
-        self.login_widget.show()
 
     def ocultar_areas(self):
         self.home_area.hide()
@@ -233,33 +170,6 @@ class LoginWindow(QWidget):
             return os.path.dirname(sys.executable)
         else:
             return os.path.dirname(os.path.abspath(__file__))
-
-    def login_with_google(self):
-        credentials = google_authenticate()
-        if credentials:
-            user_info = get_user_info(credentials)
-            token = credentials.token
-            email = user_info.get('email')
-            name = user_info.get('name')
-            self.save_token(email, token, name)
-            self.check_existing_credentials()
-
-    def save_token(self, email, token, name):
-        os.makedirs('DATA/tokens', exist_ok=True)
-        token_filename = f'token_{email.split("@")[0]}.json'
-        token_path = os.path.join('DATA', 'tokens', token_filename)
-        with open(token_path, 'w') as token_file:
-            json.dump({'token': token, 'name': name}, token_file)
-
-    def check_existing_credentials(self):
-        credentials = google_authenticate()
-        if credentials and credentials.valid:
-            user_info = get_user_info(credentials)
-            email = user_info.get('email')
-            token_filename = f'token_{email.split("@")[0]}.json'
-            if os.path.exists(f'DATA/tokens/{token_filename}'):
-                print("Hola Mundo")
-                self.show_menu_window()
 
 if __name__ == "__main__":
     app = QApplication([])

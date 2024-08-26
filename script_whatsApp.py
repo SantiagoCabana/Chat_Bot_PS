@@ -18,7 +18,6 @@ from datetime import datetime
 import time, pickle
 from googleapiclient.discovery import build
 
-
 def get_available_port(start_port):
     port = start_port
     while True:
@@ -161,8 +160,6 @@ class SeleniumWorker(QRunnable):
             self.esperar_carga_mensajes()
             print("Buscando chat no leído")
             time.sleep(5)
-            self.selecionar_filtro("no_leidos")
-            time.sleep(0.5)
             self.ordenar_chats()
             time.sleep(0.5)
             self.signals.result.emit("Buscando chat no leído")
@@ -218,32 +215,6 @@ class SeleniumWorker(QRunnable):
                 #crear el archivo xml vacio osea 100% blanco
                 with open(filename, 'w', encoding='utf-8') as file:
                     file.write("")
-    
-    # función para seleccionar el filtro de búsqueda de chats
-    def selecionar_filtro(self, tipo):
-        # Abrir el filtro de búsqueda si está desactivado (aria-pressed='false')
-        if tipo == "no_leidos":
-            # seleccionar chats no leídos
-            filtro_xpath = "//button[@data-tab='4' and .//div[text()='No leídos']]"
-        elif tipo == "contactos":
-            # seleccionar contactos
-            filtro_xpath = "//button[@data-tab='4' and .//div[text()='Contactos']]"
-        elif tipo == "grupos":
-            # seleccionar grupos
-            filtro_xpath = "//button[@data-tab='4' and .//div[text()='Grupos']]"
-        elif tipo == "etiquetas":
-            # seleccionar etiquetas
-            filtro_xpath = "//button[@data-tab='4' and .//div[text()='Etiquetas']]"
-        else:
-            print("Tipo de filtro no reconocido")
-            return
-        
-        # Intentar encontrar el filtro y hacer clic en él
-        try:
-            filtro = self.driver.find_element(By.XPATH, filtro_xpath)
-            filtro.click()
-        except NoSuchElementException:
-            print("No se pudo encontrar el filtro especificado")
 
     def boton_filtro(self):
         #selecionar el boton de filtro de busqueda de chats pero verificar si esta activado o desactivado

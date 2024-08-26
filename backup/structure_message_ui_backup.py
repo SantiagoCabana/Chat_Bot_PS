@@ -448,7 +448,18 @@ class StructureUI(QWidget):
         # Añadir el widget principal al layout general
         self.structure_layout.addWidget(self.structure_widget)
 
+    def add_widget_movable(self, color, widget_id=0, tipo="rectangle"):
+        can_delete = True  # o el valor que corresponda
+        opciones = []  # o el valor que corresponda
+        connections = []  # o el valor que corresponda
 
+        if widget_id is None:
+            widget = MovableWidget(self, color, None, can_delete, opciones, connections, tipo="pentagon")
+        else:
+            widget_id = self.next_widget_id
+            self.next_widget_id += 1
+            widget = MovableWidget(self, color, widget_id, can_delete, opciones, connections, tipo)
+    
 
     def add_random_widget(self):
         color = self.generate_random_color()
