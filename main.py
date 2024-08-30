@@ -7,7 +7,8 @@ from PyQt5.QtGui import QIcon, QPixmap, QImage
 from PyQt5.QtCore import Qt, QSize
 from functions.icon_button import IconButton
 from google.auth.exceptions import RefreshError
-from google_authenticate import google_authenticate, get_user_info
+
+from area_google_accounts import retornar_area_google_accounts
 from area_script_run import retornar_area_script_run
 from area_structure_message import retornar_area_structure_message
 from area_historial_chat import retornar_area_historial_chat
@@ -35,7 +36,7 @@ class LoginWindow(QWidget):
         self.mostrar_home_area()
 
     def create_content_areas(self):
-        self.home_area = QWidget()
+        self.home_area = retornar_area_google_accounts()
         self.script_manager_area = retornar_area_script_run()
         self.structure_message_area = retornar_area_structure_message()
         self.historial_chat_area = retornar_area_historial_chat()
@@ -47,7 +48,7 @@ class LoginWindow(QWidget):
         anchofijo = 120
         altura = 70
 
-        self.home = IconButton("Inicio", "resource/svg/home.svg", self)
+        self.home = IconButton("Cuentas de Google", "resource/svg/google.svg", self)
         self.home.clicked.connect(self.mostrar_home_area)
         self.home.setFixedSize(anchofijo, altura)
 
@@ -63,9 +64,6 @@ class LoginWindow(QWidget):
         self.btn_hisstorial_chat.clicked.connect(self.mostrar_historial_chat_area)
         self.btn_hisstorial_chat.setFixedSize(anchofijo, altura)
 
-        self.btn_close_user = IconButton('Cerrar Sesión', "resource/svg/user.svg", self)
-        self.btn_close_user.setFixedSize(anchofijo, altura)
-
         self.boton4 = QPushButton("⚙️", self)
         self.boton4.setFixedSize(120, 70)
 
@@ -80,7 +78,6 @@ class LoginWindow(QWidget):
         button_layout.addWidget(self.btn_estructure)
         button_layout.addWidget(self.btn_hisstorial_chat)
         button_layout.addStretch()
-        button_layout.addWidget(self.btn_close_user)
         button_layout.addWidget(self.boton4)
 
         content_frame = QFrame()

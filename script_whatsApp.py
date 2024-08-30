@@ -1,5 +1,5 @@
 import os, sys,cv2,json, numpy as np
-import socket
+import socket,re,requests
 import hashlib
 import asyncio
 from PyQt5.QtCore import QRunnable, pyqtSignal, pyqtSlot, QObject, QTimer
@@ -17,6 +17,7 @@ import xml.etree.ElementTree as ET
 from datetime import datetime
 import time, pickle
 from googleapiclient.discovery import build
+from google.oauth2.credentials import Credentials
 
 def get_available_port(start_port):
     port = start_port
@@ -44,30 +45,35 @@ class SeleniumWorker(QRunnable):
         self.ruta_json = os.path.join(self.get_executable_dir(),'DATA', 'resource', 'json')
         self.user_data_file = os.path.join(self.get_executable_dir(),'DATA', 'resource', 'json', 'Z_USERS_DATA.json')
         self.user_data_directory = None
+        self.ruta_token = None
         self.user_data = None
         self.puerto = self.convertir_nombre_a_puerto(nombre_script)
         self.interval_id = None
         self.lista_chats = []
-        self.lista_xpath = None
+        self.lista_xpath = '//div[@aria-label="Lista de chats" and @role="grid" and contains(@class, "x1y332i5") and contains(@class, "x1n2onr6")]'
         self.capture_timer = None
         self.use_gui = False
-        self.mensajes_list = "//div[@class='x3psx0u xwib8y2 xkhd6sd xrmvbpv']"
+        self.mensajes_list = '//div[@aria-label="Lista de chats" and @role="grid" and contains(@class, "x1y332i5") and contains(@class, "x1n2onr6")]'
         self.load_user_data()
         self.crear_archivos()
 
     @pyqtSlot()
     def run(self):
+        if not self.ruta_token:
+            self.signals.error.emit("No se ha configurado la ruta del token de inicio de sesión.")
         try:
+            self.conectarse_lmStudio()  # Conectar a lmStudio al inicio
             self.iniciar()
             while not self.stop_thread.is_set():
-                self.load_user_data()  # Recargar datos para verificar el estado actual
+                self.load_user_data()
                 if self.nombre_script not in self.user_data or not self.user_data[self.nombre_script]["running"]:
                     self.stop()
                     break
                 self.accion()
-                asyncio.run(asyncio.sleep(0.1))  # Dormir por 100ms para evitar uso excesivo de CPU
+                asyncio.run(asyncio.sleep(0.1))
         except Exception as e:
             self.signals.error.emit(str(e))
+            print(f"Error en el script: {str(e)}")
         finally:
             self.stop()
             self.signals.finished.emit()
@@ -76,6 +82,14 @@ class SeleniumWorker(QRunnable):
     def stop_script(self):
         self.user_data[self.nombre_script]["running"] = False
         self.save_user_data()
+        self.stop_thread.set()
+        if self.driver:
+            self.signals.result.emit(f"Deteniendo instancia {self.nombre_script}")
+            self.driver.quit()
+        self.signals.finished.emit()
+
+    def stop(self):
+        self.running = False
         self.stop_thread.set()
         if self.driver:
             self.signals.result.emit(f"Deteniendo instancia {self.nombre_script}")
@@ -92,6 +106,25 @@ class SeleniumWorker(QRunnable):
                     self.user_data = {self.nombre_script: {"running": False}}
         else:
             self.user_data = {self.nombre_script: {"running": False}}
+    
+    def cargar_flujo_xml(self):
+        ruta_flujo = os.path.join(self.ruta_xml, f'flujo_{self.nombre_script}.xml')
+        if not os.path.exists(ruta_flujo):
+            print(f"El archivo de flujo {ruta_flujo} no existe.")
+            return None
+        
+        try:
+            tree = ET.parse(ruta_flujo)
+            return tree.getroot()
+        except ET.ParseError:
+            print(f"Error al analizar el archivo XML de flujo: {ruta_flujo}")
+            return None
+
+    def cargar_datos_usuario(self):
+        if os.path.exists(self.user_data_file):
+            with open(self.user_data_file, 'r') as f:
+                datos = json.load(f)
+                self.ruta_token = datos.get('ruta_token', '')
 
     def save_user_data(self):
         with open(self.user_data_file, 'w') as f:
@@ -137,6 +170,23 @@ class SeleniumWorker(QRunnable):
         except Exception as e:
             self.signals.error.emit(f"Error al iniciar: {str(e)}")
 
+    def accion(self):
+        try:
+            self.esperar_carga_mensajes()
+            print("Buscando chat no leído")
+            time.sleep(5)
+            self.ordenar_chats()
+            time.sleep(0.5)
+            self.signals.result.emit("Buscando chat no leído")
+            self.selecionar_chat()
+            time.sleep(5)
+            self.leer_mensaje()
+            accion = ActionChains(self.driver)
+            accion.send_keys(Keys.ESCAPE).perform()
+            time.sleep(5)
+        except Exception as e:
+            self.signals.error.emit(f"Error en la función acción: {str(e)}")
+
     def capture_screen(self):
         if self.driver:
             # Capturar la pantalla
@@ -155,57 +205,9 @@ class SeleniumWorker(QRunnable):
     def set_use_gui(self, use_gui):
         self.use_gui = use_gui
 
-    def accion(self):
-        try:
-            self.esperar_carga_mensajes()
-            print("Buscando chat no leído")
-            time.sleep(5)
-            self.ordenar_chats()
-            time.sleep(0.5)
-            self.signals.result.emit("Buscando chat no leído")
-            self.selecionar_chat()
-            time.sleep(5)
-            self.leer_mensaje()
-            accion = ActionChains(self.driver)
-            accion.send_keys(Keys.ESCAPE).perform()
-            time.sleep(5)
-        except Exception as e:
-            self.signals.error.emit(f"Error en la función acción: {str(e)}")
 
-    def stop_running(self):
-        self.user_data[self.nombre_script]["running"] = False
-        self.save_user_data()
-        self.stop_thread.set()
-        
-    def detect_stop(self):
-        while not self.stop_thread.is_set():
-            if not self.running:
-                self.signals.result.emit("Se detectó la detención del script. Deteniendo...")
-                self.stop()
-                break
-            time.sleep(0.1)  # Revisar cada 100 ms
-
-    def stop(self):
-        self.running = False
-        self.stop_thread.set()
-        if self.driver:
-            self.signals.result.emit(f"Deteniendo instancia {self.nombre_script}")
-            self.driver.quit()
-        self.signals.finished.emit()
 
     #-----------------------------------Funciones Test-----------------------------------
-    def extraer_html_de_chat(self):
-        xpath = "//div[@class='x3psx0u xwib8y2 xkhd6sd xrmvbpv']"
-        filename = os.path.join(self.ruta_xml, f"chat_{self.nombre_script}.html")
-        try:
-            element = self.driver.find_element(By.XPATH,xpath)
-            inner_html = element.get_attribute('innerHTML')
-            
-            with open(filename, 'w', encoding='utf-8') as file:
-                file.write(inner_html)
-        except NoSuchElementException:
-            print("No se pudo encontrar el elemento.")
-
     #crear achivos si no existen
     def crear_archivos(self):
         xml = [f"informes_{self.nombre_script}.xml"]
@@ -216,35 +218,31 @@ class SeleniumWorker(QRunnable):
                 with open(filename, 'w', encoding='utf-8') as file:
                     file.write("")
 
-    def boton_filtro(self):
-        #selecionar el boton de filtro de busqueda de chats pero verificar si esta activado o desactivado
+    def añadir_tag(self, chat, tag):
+        print(f"Añadiendo etiqueta '{tag}' al chat: {chat}")
         try:
-            filtro = self.driver.find_element(By.XPATH, "//button[@data-tab='4' and @aria-label='Menú de filtros de chats' and @aria-pressed='false']")
-            filtro.click() #activar filtro
-            print("Boton filtro encontrado y activado")
-        except NoSuchElementException:
-            #llamar el desacrivador de filtro
-            print("No se pudo encontrar el boton filtro, verificando si esta activado y luego activarlo")
-            self.deselect_filtro()
-            time.sleep(0.5)
-            self.boton_filtro()
-
-    def deselect_filtro(self,open=False):
-        try:
-            if open:
-                filtro = self.driver.find_element(By.XPATH, "//button[@data-tab='4' and @aria-label='Menú de filtros de chats' and @aria-pressed='false']")
-                filtro.click()
-                print("Boton filtro encontrado y activado")
-                return
-            filtro = self.driver.find_element(By.XPATH, "//button[@data-tab='4' and @aria-label='Menú de filtros de chats' and @aria-pressed='true']")
-            filtro.click()
-            print("Boton filtro encontrado y desactivado")
-            #precionar esc para cerrar el filtro y el  chat
-            accion = ActionChains(self.driver)
-            accion.send_keys(Keys.ESCAPE).perform()
-            print("Boton filtro encontrado y desactivado")
-        except NoSuchElementException:
-            print("No se pudo encontrar el boton filtro")
+            chat_element = self.driver.find_element(By.XPATH, f"//div[@class='x10l6tqk xh8yej3 x1g42fcv']//div[@class='_aou8 _aj_h']/span[contains(@class, 'x1iyjqo2') and text()='{chat}']/ancestor::div[@class='x10l6tqk xh8yej3 x1g42fcv']")
+            
+            # Hacer clic derecho en el chat
+            ActionChains(self.driver).context_click(chat_element).perform()
+            time.sleep(0.1)
+    
+            # Encontrar y hacer clic en la opción de etiquetar
+            etiquetar = self.driver.find_element(By.XPATH, "//li[@tabindex='0' and @data-animate-dropdown-item='true' and contains(@class, '_aj-r') and .//div[@role='button' and @aria-label='Etiquetar chat']]")
+            etiquetar.click()
+            time.sleep(0.1)
+    
+            # Seleccionar la etiqueta
+            checkbox_etiqueta = self.driver.find_element(By.XPATH, f"//span[@title='{tag}']/ancestor::div[contains(@class, 'x10l6tqk') and @role='listitem']//button[@title='Añadir etiqueta']")
+            checkbox_etiqueta.click()
+            time.sleep(0.1)
+    
+            # Guardar la etiqueta
+            guardar = self.driver.find_element(By.XPATH, "//button[not(@aria-disabled='true')]//div[text()='Guardar']")
+            guardar.click()
+            print(f"Etiqueta '{tag}' añadida con éxito al chat: {chat}")
+        except Exception as e:
+            print(f"Error al añadir la etiqueta '{tag}' al chat {chat}: {str(e)}")
 
     #-----------------------------------Funciones de HTML-----------------------------------
     # Ordenar chats en el HTML
@@ -289,89 +287,6 @@ class SeleniumWorker(QRunnable):
 
     #-----------------------------------Funciones de chat-----------------------------------
 
-    #Informe de la lista de chats:
-    def informe_chats(self):
-        chat_list = self.driver.find_element(By.XPATH, self.lista_xpath)
-        # Continuar con el procesamiento de los chats ordenados
-        all_chats = chat_list.find_elements(By.XPATH, ".//div[contains(@class, '_aou8')]")
-        count_con_nombre = 0
-        chats_con_nombre = []
-        count_sin_nombre = 0
-        chats_sin_nombre = []
-
-        chat_list_no_read = []
-        #escanear los chats y guardar un informe en un archivo generarn un id para cada chat mediante su nombre en un xml o json
-        for chat in all_chats:
-            try:
-                # Intentar encontrar el nombre del chat
-                nombre = chat.find_element(By.XPATH, ".//span[contains(@class, 'x1iyjqo2') and string-length(text()) > 0 and not(starts-with(text(), '+'))]")
-                count_con_nombre += 1
-                chats_con_nombre.append(nombre.text)
-                nombre_no_leido = chat.find_element(By.XPATH, "//div[@class='x10l6tqk xh8yej3 x1g42fcv']//div[@class='_aou8 _aj_h']/span[contains(@class, 'x1iyjqo2') and string-length(text()) > 0 and not(starts-with(text(), '+'))]/ancestor::div[@class='x10l6tqk xh8yej3 x1g42fcv']//span[(@aria-label='No leídos' or contains(@aria-label, 'no leídos'))]")
-                chat_list_no_read.append(nombre_no_leido.text)
-            except:
-                # Si no se encuentra el nombre, verificar si es un número sin nombre
-                try:
-                    numero = chat.find_element(By.XPATH, ".//span[contains(@class, 'x1iyjqo2') and starts-with(text(), '+')]")
-                    count_sin_nombre += 1
-                    chats_sin_nombre.append(numero.text)
-
-                except:
-                    # Si no se encuentra ni nombre ni número, ignorar este chat
-                    pass
-        #fucionar listas y guardar informe
-        informe = chats_con_nombre + chats_sin_nombre
-
-        self.guardar_informe(informe, "chat_list")
-
-        # Imprimir resultados
-        print(f"Cantidad total de chats: {len(all_chats)}")
-        print(f"Cantidad de chats sin nombre: {count_sin_nombre}")
-        print(f"Cantidad de chats con nombre: {count_con_nombre}")
-
-        print("Chats sin nombre en el orden en que se encontraron:")
-        for chat in chats_sin_nombre:
-            print(chat)
-
-    def guardar_informe(self, informacion, tipo):
-        if tipo == "chat_list":
-            self.guardar_informe_chat_list(informacion)
-    
-    def guardar_informe_chat_list(self, informacion):
-        filename = os.path.join(self.ruta_xml, f"informes_{self.nombre_script}.xml")
-        if os.path.exists(filename) and os.path.getsize(filename) > 0:
-            try:
-                tree = ET.parse(filename)
-                root = tree.getroot()
-            except ET.ParseError:
-                # Si el archivo está malformado, lo tratamos como si no existiera
-                root = ET.Element("informes")
-        else:
-            root = ET.Element("informes")
-        # Buscamos o creamos el elemento "chat_list"
-        chat_list_element = root.find("chat_list_no_read")
-        if chat_list_element is None:
-            chat_list_element = ET.SubElement(root, "chat_list_no_read")
-        # Añadimos o actualizamos la información con fecha y hora
-        for chat in informacion:
-            id_chat = self.generar_id_fijo(chat)
-            fecha = datetime.now().strftime("%d/%m/%Y")
-            hora = datetime.now().strftime("%H:%M:%S")
-            # Buscamos si ya existe un chat con el mismo id
-            existing_chat_element = chat_list_element.find(f"./chat[@id='{id_chat}']")
-            if existing_chat_element is not None:
-                # Si existe, actualizamos el contenido y los atributos
-                existing_chat_element.set('fecha', fecha)
-                existing_chat_element.set('hora', hora)
-                existing_chat_element.text = chat
-            else:
-                # Si no existe, creamos un nuevo elemento
-                chat_element = ET.SubElement(chat_list_element, "chat", id=id_chat, fecha=fecha, hora=hora)
-                chat_element.text = chat
-        # Guardamos el archivo
-        tree = ET.ElementTree(root)
-        tree.write(filename, encoding="utf-8", xml_declaration=True)
-
     def generar_id_fijo(self, valor):
         # Crear un objeto hash SHA-256
         hash_obj = hashlib.sha256()
@@ -385,8 +300,94 @@ class SeleniumWorker(QRunnable):
         return str(hash_int)[:6]
 
     #procesar respuesta
-    def procesar_respuesta(self):
-        pass
+    def procesar_respuesta(self, nombre_formateado, tipo_chat):
+        flujo = self.cargar_flujo_xml()
+        if flujo is None:
+            print("No se pudo cargar el flujo XML")
+            return
+
+        if tipo_chat == "nuevo":
+            mensaje_bienvenida = flujo.find('welcomeMessage')
+            if mensaje_bienvenida is None:
+                print("No se encontró el mensaje de bienvenida en el XML")
+                return
+            mensaje_bienvenida = mensaje_bienvenida.text.strip()
+            print(f"Mensaje de bienvenida original: {mensaje_bienvenida}")
+            mensaje_modificado = self.generar_mensaje_lmStudio(mensaje_bienvenida)
+            if mensaje_modificado:
+                print(f"Mensaje modificado por lmStudio: {mensaje_modificado}")
+                self.escribir_chat(mensaje_modificado)
+            else:
+                print("No se pudo modificar el mensaje, enviando el original")
+                self.escribir_chat(mensaje_bienvenida)
+        else:
+            ultimo_mensaje = self.obtener_ultimo_mensaje(nombre_formateado)
+            
+            if ultimo_mensaje:
+                respuesta = self.buscar_respuesta(flujo, ultimo_mensaje)
+                if respuesta:
+                    mensaje_modificado = self.generar_mensaje_lmStudio(respuesta)
+                    if mensaje_modificado:
+                        self.escribir_chat(mensaje_modificado)
+                    else:
+                        self.escribir_chat(respuesta)
+                else:
+                    respuesta_default = flujo.find('defaultResponse').text.strip()
+                    mensaje_modificado = self.generar_mensaje_lmStudio(respuesta_default)
+                    if mensaje_modificado:
+                        self.escribir_chat(mensaje_modificado)
+                    else:
+                        self.escribir_chat(respuesta_default)
+            else:
+                print("No se pudo obtener el último mensaje del chat.")
+
+    def conectarse_lmStudio(self):
+        print("Conectando a lmStudio...")
+        self.lmstudio_url = "http://localhost:1234/v1/chat/completions"
+        self.lmstudio_headers = {
+            "Content-Type": "application/json"
+        }
+
+    def generar_mensaje_lmStudio(self, mensaje_usuario):
+        data = {
+            "messages": [
+                {"role": "system", "content": "Tu tarea es realizar modificaciones sutiles y ligeras a los mensajes relacionados con cursos que recibas. Sigue estas reglas: Mantén el tema y la intención original del mensaje. Haz cambios ligeros usando sinónimos y reformulando frases de manera sutil para mejorar el mensaje sin alterarlo drásticamente. Incorpora algunos emojis relevantes para destacar puntos clave, sin exagerar su uso. Respeta y mantén intactos los enlaces, fechas y horas proporcionados. Mantén la estructura del mensaje, incluyendo saltos de línea. No agregues información nueva ni promociones adicionales. Mejora ligeramente el llamado a la acción final para hacerlo más atractivo, sin cambiar su esencia. Responde únicamente con el mensaje modificado, sin comentarios adicionales. Asegúrate de que el mensaje completo esté en español. Evita cambios exagerados; las modificaciones deben ser leves y naturales. Cada respuesta que des debe de ser diferente."},
+                {"role": "user", "content": mensaje_usuario}
+            ],
+            "temperature": 0.7,
+            "max_tokens": 100
+        }
+        
+        try:
+            response = requests.post(self.lmstudio_url, headers=self.lmstudio_headers, json=data)
+            response.raise_for_status()
+            return response.json()['choices'][0]['message']['content']
+        except requests.RequestException as e:
+            print(f"Error al conectar con lmStudio: {e}")
+            return None
+
+    def obtener_ultimo_mensaje(self, nombre_formateado):
+        ruta_chat = os.path.join(self.get_executable_dir(), 'DATA', 'history', 'chats', f'{nombre_formateado}.xml')
+        if not os.path.exists(ruta_chat):
+            return None
+        
+        try:
+            tree = ET.parse(ruta_chat)
+            root = tree.getroot()
+            mensajes = root.findall(".//mensaje[@tipo='el']")
+            if mensajes:
+                return mensajes[-1].text
+        except ET.ParseError:
+            print(f"Error al analizar el archivo XML del chat: {ruta_chat}")
+        
+        return None
+
+    def buscar_respuesta(self, flujo, mensaje):
+        for response in flujo.findall('.//response'):
+            keyword = response.find('keyword').text.strip().lower()
+            if re.search(r'\b' + re.escape(keyword) + r'\b', mensaje.lower()):
+                return response.find('message').text.strip()
+        return None
 
     def selecionar_chat(self):
         # Abrir el primer chat no leido no leido con nombre q esta dentro de la lista de chats pero solo selecionar el primero sin leer de todos
@@ -409,41 +410,16 @@ class SeleniumWorker(QRunnable):
             except:
                 print("No se pudo seleccionar el chat no leído")
         else:
-            print("No hay chats no leídos con nombre.")
-            try:
-                print("No se encontraron chats no leídos sin nombre\n aplicando filtro")
-                # Si no se encuentran chats no leídos, deseleccionar el filtro
-                self.deselect_filtro(open=True)
-                name_tag = "Video Explicativo 40%"
-                print(f"seleccionando la etiqueta: {name_tag}") 
-                # Construir el XPath para el nuevo filtro basado en la etiqueta
-                etiqueta = f"//li[contains(@class, '_aj-r') and contains(@class, '_aj-q') and contains(@class, '_aj-_')]//button[contains(@class, 'x9f619')]//div[contains(@class, 'x3nfvp2')]//div[contains(@class, 'x78zum5')]//svg[contains(@class, 'x1rg5ohu')]//span[contains(@class, 'x1f6kntn')]//span[@class='_ao3e' and text()='{name_tag}']"
-                # Intentar encontrar el elemento del filtro y hacer clic en él
-                filtro = self.driver.find_element(By.XPATH, etiqueta)
-                filtro.click()
-            except NoSuchElementException:
-                # Si no se encuentra el filtro, imprimir un mensaje y retornar
-                print("No se encontraron chats no leídos")
-
-    #funcion para leer el chat y ver el estatus de nuestro mensaje
-    def leer_chat(self):
-        #guiate de @readme para mas informacion de los xpath
-        enviado = self.driver.find_element(By.XPATH, "//div[contains(@class, 'message-out')]//span[@aria-label=' Enviado ']")
-        entregado = self.driver.find_element(By.XPATH, "//div[contains(@class, 'message-out')]//span[@aria-label=' Entregado ']")
-        leido = self.driver.find_element(By.XPATH, "//div[contains(@class, 'message-out')]//span[@aria-label=' Leído ']")
-
-    #mensaje de bienvenida
-    def mensaje_bienvenida(self):
-        pass
-
+            print("No se encontraron chats no leídos")
     
     def agendar_contacto_api_contacts_google(self, id, numero):
         nombre = f'{self.nombre_script}_{id}'
         
-        # Cargar el token de inicio de sesión
-        token_path = os.path.join(self.get_executable_dir(), 'DATA', 'tokens', 'pickle', 'token.pickle')
-        with open(token_path, 'rb') as token:
-            creds = pickle.load(token)
+        # Cargar el token de inicio de sesión desde el archivo JSON
+        token_path = self.ruta_token
+        with open(token_path, 'r') as token_file:
+            token_data = json.load(token_file)
+            creds = Credentials.from_authorized_user_info(token_data)
         
         # Crear el servicio de la API
         service = build('people', 'v1', credentials=creds)
@@ -590,7 +566,7 @@ class SeleniumWorker(QRunnable):
         print(f"Chat: {nombre_chat}")
         
         # Guardar el contacto y obtener el ID
-        id,nombre_formateado = self.save_contact_list(nombre_chat)
+        id, nombre_formateado = self.save_contact_list(nombre_chat)
         
         mensajes_nuevos = []
         
@@ -612,7 +588,13 @@ class SeleniumWorker(QRunnable):
         for mensaje in mensajes_nuevos:
             print(mensaje["texto"])
         
-        self.save_chat_in_xml(nombre_formateado,id, mensajes_nuevos)
+        self.save_chat_in_xml(nombre_formateado, id, mensajes_nuevos)
+        
+        print(f"Enviando mensaje de bienvenida a {nombre_chat}")
+        self.procesar_respuesta(nombre_formateado, "nuevo")
+        time.sleep(2)  # Esperar un poco antes de añadir la etiqueta
+        print(f"Añadiendo etiqueta al chat: {nombre_chat}")
+        self.añadir_tag(nombre_chat, "Bienvenida Enviada")
 
     # Formatear el número dependiendo del país
     def formatear_numero(self, numero):
@@ -705,26 +687,6 @@ class SeleniumWorker(QRunnable):
             except:
                 print("Esperando a que cargue WhatsApp")
                 time.sleep(2)
-    
-    #escanear lista de chats
-    def escanear_chats(self):
-        #identificar los xpath de caa tipo de chat @readme para mas informacion
-        chats = self.driver.find_elements(By.XPATH, "//div[@class='_1H6CJ']")
-        for chat in chats:
-            try:
-                #identificar el nombre del chat
-                nombre = chat.find_element(By.XPATH, ".//span[@title]")
-                print(nombre.text)
-            except:
-                #si no tiene nombre, identificar el numero
-                try:
-                    numero = chat.find_element(By.XPATH, ".//span[@dir='ltr']")
-                    print(numero.text)
-                except:
-                    #si no tiene nombre ni numero, ignorar el chat
-                    pass
-        #identicar grupos leidos y sin leer (leidos:"//div[@class='_ak8q']/span[contains(@class, 'x1iyjqo2') and not(starts-with(text(), '+'))]") no leidos
-    
 
     #-----------------------------------Funciones auxiliares-----------------------------------
 
@@ -743,8 +705,12 @@ class SeleniumWorker(QRunnable):
         while not self.puerto_disponible(puerto):
             puerto += 1
         return puerto
+    
+    def conectarse_lmStudio(self):
+        print("Conectando a lmStudio...")
 
 # Ejemplo de uso
 if __name__ == "__main__":
     worker = SeleniumWorker("DATA1")
+    worker.set_use_gui(True)
     worker.run()

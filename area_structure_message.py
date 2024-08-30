@@ -101,6 +101,12 @@ class FlowSheetManager(QWidget):
         
         # Insertar el widget en el layout de botones de hojas antes del resorte
         self.sheet_buttons_layout.insertWidget(self.sheet_buttons_layout.count() - 1, widget)
+        
+        # Si el modo de eliminación está activado, mostrar el checkbox de la nueva hoja
+        if self.delete_sheets:
+            checkbox = widget.findChild(QCheckBox)
+            if checkbox:
+                checkbox.setVisible(True)
     
     def hoja_widget_item_list(self):
         # Crear un nombre para la nueva hoja
@@ -152,12 +158,15 @@ class FlowSheetManager(QWidget):
         return widget
     
     def show_checkboxes(self):
-        # Mostrar todos los checkboxes en los widgets de las hojas
+        # Alternar el estado de delete_sheets
+        self.delete_sheets = not self.delete_sheets
+        
+        # Mostrar u ocultar todos los checkboxes en los widgets de las hojas
         for i in range(self.sheet_buttons_layout.count() - 1):
             widget = self.sheet_buttons_layout.itemAt(i).widget()
             checkbox = widget.findChild(QCheckBox)
             if checkbox:
-                checkbox.setVisible(True)
+                checkbox.setVisible(self.delete_sheets)
 
     def principal_button_clicked(self):
         print("Hola Mundo")

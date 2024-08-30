@@ -1,6 +1,7 @@
 from PyQt5.QtWidgets import (QWidget, QPushButton, QVBoxLayout, QHBoxLayout, 
                              QTextEdit, QGroupBox, QScrollArea, QGridLayout, 
-                             QSizePolicy, QLineEdit, QLabel, QCheckBox, QInputDialog, QMessageBox)
+                             QSizePolicy, QLineEdit, QLabel, QCheckBox, QInputDialog, QMessageBox,
+                             QComboBox)
 from PyQt5.QtGui import QPixmap, QImage
 from PyQt5.QtCore import Qt, pyqtSignal, QObject, QTimer
 from worker import WorkerManager
@@ -295,10 +296,45 @@ class ScriptContainer(QGroupBox):
         layout.addWidget(self.preview_label)
         layout.addStretch()
 
+        # Crear y agregar la lista desplegable
+        self.cuenta_combobox = QComboBox()
+        self.cargar_cuentas()
+        self.cuenta_combobox.currentIndexChanged.connect(self.actualizar_cuenta_seleccionada)
+        layout.addWidget(self.cuenta_combobox)
+
         # Conexiones
         self.boton_estado.clicked.connect(self.toggle_estado)
         self.boton_pantalla.clicked.connect(self.mostrar_ventana_script)
         self.boton_configuracion.clicked.connect(self.abrir_configuracion)
+        self.use_gui_checkbox.stateChanged.connect(self.actualizar_cuenta_seleccionada)
+
+    def cargar_cuentas(self):
+        ruta_cuentas = os.path.join(self.get_executable_dir(), 'DATA', 'resource', 'json', 'cuentas_google.json')
+        try:
+            with open(ruta_cuentas, 'r') as archivo:
+                cuentas = json.load(archivo)
+            for correo, datos in cuentas.items():
+                if datos['estado']:
+                    self.cuenta_combobox.addItem(datos['nombre'], correo)
+        except Exception as e:
+            print(f"Error al cargar las cuentas: {e}")
+
+    def actualizar_cuenta_seleccionada(self):
+        correo_seleccionado = self.cuenta_combobox.currentData()
+        ruta_json = os.path.join(self.get_executable_dir(), 'DATA', 'resource', 'json', 'Z_USERS_DATA.json')
+        try:
+            with open(ruta_json, 'r') as archivo:
+                datos = json.load(archivo)
+            datos[self.nombre_script] = {
+                'running': self.running,
+                'selected_message': '',
+                'cuenta_seleccionada': correo_seleccionado,
+                'interface': self.use_gui_checkbox.isChecked()
+            }
+            with open(ruta_json, 'w') as archivo:
+                json.dump(datos, archivo, indent=4)
+        except Exception as e:
+            print(f"Error al actualizar el archivo JSON: {e}")
 
     def toggle_estado(self):
         if self.boton_estado.isChecked():
@@ -339,7 +375,12 @@ class ScriptContainer(QGroupBox):
             if str(self.nombre_script) in datos:
                 datos[str(self.nombre_script)]['running'] = estado
             else:
-                datos[str(self.nombre_script)] = {'running': estado, 'selected_message': ''}
+                datos[str(self.nombre_script)] = {
+                    'running': estado,
+                    'selected_message': '',
+                    'cuenta_seleccionada': '',
+                    'interface': False
+                }
             with open(ruta_json, 'w') as archivo:
                 json.dump(datos, archivo, indent=4)
         except Exception as e:

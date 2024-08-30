@@ -1,24 +1,54 @@
-import requests
+import os
+import pickle
+import google.auth.transport.requests
+from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.discovery import build
+from googleapiclient.errors import HttpError
 
-# Leer el contenido del archivo mensaje.txt
-with open('mensaje.txt', 'r', encoding='utf-8') as file:
-    mensaje_usuario = file.read()
+SCOPES = ['https://www.googleapis.com/auth/contacts']
+credentials_path = 'resource/credentials.json'
+token_path = 'path/to/token.pickle'
 
-url = "http://localhost:1234/v1/chat/completions"
-headers = {
-    "Content-Type": "application/json"
-}
-data = {
-    "messages": [
-        {"role": "system", "content": "Tu tarea es realizar modificaciones sutiles y ligeras a los mensajes relacionados con cursos que recibas. Sigue estas reglas: Mantén el tema y la intención original del mensaje. Haz cambios ligeros usando sinónimos y reformulando frases de manera sutil para mejorar el mensaje sin alterarlo drásticamente. Incorpora algunos emojis relevantes para destacar puntos clave, sin exagerar su uso. Respeta y mantén intactos los enlaces, fechas y horas proporcionados. Mantén la estructura del mensaje, incluyendo saltos de línea. No agregues información nueva ni promociones adicionales. Mejora ligeramente el llamado a la acción final para hacerlo más atractivo, sin cambiar su esencia. Responde únicamente con el mensaje modificado, sin comentarios adicionales. Asegúrate de que el mensaje completo esté en español. Evita cambios exagerados; las modificaciones deben ser leves y naturales. Cada respuesta que des debe de ser diferente."},
-        {"role": "user", "content": mensaje_usuario}
-    ],
-    "temperature": 0.7,
-    "max_tokens": 100
-}
+def get_credentials():
+    creds = None
+    token_dir = os.path.dirname(token_path)
+    
+    if not os.path.exists(token_dir):
+        os.makedirs(token_dir)
+    
+    if os.path.exists(token_path):
+        with open(token_path, 'rb') as token:
+            creds = pickle.load(token)
 
-response = requests.post(url, headers=headers, json=data)
+    if not creds or not creds.valid:
+        if creds and creds.expired and creds.refresh_token:
+            creds.refresh(google.auth.transport.requests.Request())
+        else:
+            flow = InstalledAppFlow.from_client_secrets_file(credentials_path, SCOPES)
+            creds = flow.run_local_server(port=0)
 
-# Extraer y mostrar solo la respuesta de la IA
-mensaje_modificado = response.json()['choices'][0]['message']['content']
-print(mensaje_modificado)
+        with open(token_path, 'wb') as token:
+            pickle.dump(creds, token)
+
+    return creds
+
+def create_contact(first_name, last_name, email):
+    creds = get_credentials()
+    service = build('people', 'v1', credentials=creds)
+
+    contact_body = {
+        'names': [{'givenName': first_name, 'familyName': last_name}],
+        'emailAddresses': [{'value': email}]
+    }
+
+    try:
+        service.people().createContact(body=contact_body).execute()
+        print(f'Contacto {first_name} {last_name} agregado exitosamente.')
+    except HttpError as e:
+        if e.resp.status == 403:
+            print("Error 403: La API de People no está habilitada. Por favor, habilítala y vuelve a intentarlo.")
+        else:
+            print(f'Error al agregar el contacto: {e}')
+
+# Ejemplo de uso
+create_contact('Juan', 'Perez', 'juan.perez@example.com')
